@@ -106,16 +106,31 @@ try:
 except Exception:  # noqa: BLE001 — no secrets file is fine
     pass
 
+MODEL_CHOICES = {
+    "Haiku 4.5 — fastest & cheapest (recommended)": "claude-haiku-4-5",
+    "Sonnet 4.6 — balanced": "claude-sonnet-4-6",
+    "Opus 4.8 — most capable": "claude-opus-4-8",
+}
+
 use_claude = st.sidebar.toggle(
-    "Use Claude (claude-opus-4-8)", value=bool(default_key),
-    help="On: classify with the Anthropic API. Off: use the built-in rule-based engine.")
+    "Use Claude", value=bool(default_key),
+    help="On: classify with the Anthropic API. Off: use the built-in rule-based engine (free).")
 api_key = ""
+model_id = "claude-haiku-4-5"
+run_claude = False
 if use_claude:
     api_key = st.sidebar.text_input(
         "Anthropic API key", value=default_key, type="password",
         help="Read from ANTHROPIC_API_KEY / st.secrets if set. Never stored.")
+    model_label = st.sidebar.selectbox("Model", list(MODEL_CHOICES), index=0)
+    model_id = MODEL_CHOICES[model_label]
+    run_claude = st.sidebar.button(
+        "⚡ Run Claude classification",
+        help="Spends a few cents of API credit (≈5–10¢ on Haiku for the full "
+             "dataset). Free rule-based results show until you click; results are "
+             "cached so it won't re-bill for the same data.")
     if not api_key:
-        st.sidebar.warning("No key provided — falling back to the rule-based engine.")
+        st.sidebar.warning("No key provided — using the free rule-based engine.")
         use_claude = False
 
 st.sidebar.subheader("3 · Current-state window")
@@ -130,35 +145,41 @@ engine = "claude" if use_claude else "rule"
 # Run classification (cached for rules; session-stored for Claude)
 # --------------------------------------------------------------------------- #
 
-def run_classification(df: pd.DataFrame, engine: str, api_key: str) -> pd.DataFrame:
-    if engine == "rule":
-        return classify_rule_based(df)
+def run_classification(df, engine, api_key, model_id, run_claude):
+    """Returns (classified_df, active_engine). Never spends tokens unless the
+    user explicitly clicks Run Claude; free rule-based results show otherwise."""
+    rule = classify_rule_based(df)
+    if engine != "claude":
+        return rule, "rule"
 
-    fp = df_fingerprint(df) + "|claude"
+    fp = df_fingerprint(df) + "|" + model_id
     if st.session_state.get("clf_fp") == fp:
-        return st.session_state["clf_df"]
+        return st.session_state["clf_df"], "claude"
+
+    if not run_claude:
+        return rule, "rule-pending"  # Claude is on, but not yet run (no spend)
 
     client, err = get_client(api_key)
     if client is None:
-        st.error(f"Could not start the Claude engine ({err}). Using rule-based instead.")
-        return classify_rule_based(df)
+        st.error(f"Could not start the Claude engine ({err}). Showing rule-based results.")
+        return rule, "rule"
 
-    bar = st.progress(0.0, text="Classifying updates with Claude…")
+    bar = st.progress(0.0, text=f"Classifying updates with {model_id}…")
     try:
         out = radar.classify_updates(
-            df, "claude", client=client,
-            progress=lambda p: bar.progress(p, text=f"Classifying updates with Claude… {int(p*100)}%"))
+            df, "claude", client=client, model=model_id,
+            progress=lambda p: bar.progress(p, text=f"Classifying with {model_id}… {int(p*100)}%"))
     except Exception as e:  # noqa: BLE001
         bar.empty()
-        st.error(f"Claude classification failed ({e}). Using rule-based instead.")
-        return classify_rule_based(df)
+        st.error(f"Claude classification failed ({e}). Showing rule-based results.")
+        return rule, "rule"
     bar.empty()
     st.session_state["clf_fp"] = fp
     st.session_state["clf_df"] = out
-    return out
+    return out, "claude"
 
 
-clf = run_classification(raw, engine, api_key)
+clf, active_engine = run_classification(raw, engine, api_key, model_id, run_claude)
 clf["sev_rank"] = clf["severity"].map(SEV_ORDER)
 
 
@@ -171,8 +192,12 @@ st.markdown(
     "**An AI workflow that monitors project updates and flags risks, dependencies "
     "and blockers early — then turns the noise into a clear status digest.**")
 
-engine_label = ("🤖 Claude · claude-opus-4-8" if engine == "claude"
-                else "⚙️ Rule-based engine (no API key)")
+if active_engine == "claude":
+    engine_label = f"🤖 Claude · {model_id}"
+elif active_engine == "rule-pending":
+    engine_label = "⚙️ Rule-based (free) — click ⚡ Run Claude in the sidebar to use the LLM"
+else:
+    engine_label = "⚙️ Rule-based engine (free, no API key)"
 st.caption(f"Engine: {engine_label}  ·  {len(raw)} updates  ·  "
            f"{raw['project'].nunique()} projects  ·  health window: last {recent_weeks} weeks")
 
@@ -268,10 +293,11 @@ with tab_digest:
     if st.button("Generate status digest", type="primary"):
         with st.spinner("Summarizing…"):
             client = None
-            if engine == "claude":
+            digest_engine = "claude" if active_engine == "claude" else "rule"
+            if digest_engine == "claude":
                 client, _ = get_client(api_key)
-            digest = radar.build_digest(clf, project, engine, client=client,
-                                        recent_weeks=recent_weeks)
+            digest = radar.build_digest(clf, project, digest_engine, client=client,
+                                        model=model_id, recent_weeks=recent_weeks)
         emoji, color = HEALTH_STYLE.get(digest.health, ("", "#000"))
         st.markdown(
             f"<div style='padding:14px 18px;border-radius:10px;"
@@ -339,7 +365,8 @@ rollout — which keyword rules cannot.
         agree = (clf["category"] == clf["signal_truth"]).mean()
         cm = (pd.crosstab(clf["signal_truth"], clf["category"])
               .reindex(index=radar.CATEGORIES, columns=radar.CATEGORIES, fill_value=0))
+        eng_name = "Claude" if active_engine == "claude" else "Rule-based"
         m1, _ = st.columns([1, 3])
-        m1.metric(f"{engine.title()} agreement", f"{agree*100:.1f}%")
+        m1.metric(f"{eng_name} agreement", f"{agree*100:.1f}%")
         st.caption("Confusion matrix — rows: planted truth, cols: predicted")
         st.dataframe(cm, width='content')

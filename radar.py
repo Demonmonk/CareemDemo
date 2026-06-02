@@ -26,7 +26,9 @@ import pandas as pd
 
 import prompts
 
-MODEL = "claude-opus-4-8"
+# Default to the cheapest capable model — classification is a simple task, so
+# Haiku is the cost-efficient choice. The app lets the user pick Sonnet/Opus.
+DEFAULT_MODEL = "claude-haiku-4-5"
 
 CATEGORIES = ["blocker", "risk", "dependency", "on_track"]
 SEVERITIES = ["critical", "high", "medium", "low"]
@@ -142,7 +144,7 @@ def _rule_classify_df(df: pd.DataFrame) -> pd.DataFrame:
 # Claude engine (structured outputs + prompt caching)
 # --------------------------------------------------------------------------- #
 
-def _claude_classify_df(df: pd.DataFrame, client, progress=None) -> pd.DataFrame:
+def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=None) -> pd.DataFrame:
     from pydantic import BaseModel
 
     class UpdateClassification(BaseModel):
@@ -172,8 +174,8 @@ def _claude_classify_df(df: pd.DataFrame, client, progress=None) -> pd.DataFrame
             n=len(payload), updates_json=json.dumps(payload, indent=2))
 
         resp = client.messages.parse(
-            model=MODEL,
-            max_tokens=8000,
+            model=model,
+            max_tokens=5000,
             system=[{
                 "type": "text",
                 "text": prompts.CLASSIFIER_SYSTEM,
@@ -209,11 +211,12 @@ def _claude_classify_df(df: pd.DataFrame, client, progress=None) -> pd.DataFrame
 # Public classification entry point
 # --------------------------------------------------------------------------- #
 
-def classify_updates(df: pd.DataFrame, engine: str, client=None, progress=None) -> pd.DataFrame:
+def classify_updates(df: pd.DataFrame, engine: str, client=None,
+                     model=DEFAULT_MODEL, progress=None) -> pd.DataFrame:
     if engine == "claude":
         if client is None:
             raise ValueError("Claude engine requires an Anthropic client.")
-        return _claude_classify_df(df, client, progress=progress)
+        return _claude_classify_df(df, client, model=model, progress=progress)
     return _rule_classify_df(df)
 
 
@@ -310,7 +313,7 @@ def _rule_digest(project: str, program: str, milestone: str, sub: pd.DataFrame) 
     )
 
 
-def _claude_digest(project, program, milestone, sub, client) -> StatusDigest:
+def _claude_digest(project, program, milestone, sub, client, model=DEFAULT_MODEL) -> StatusDigest:
     from pydantic import BaseModel
 
     class Digest(BaseModel):
@@ -333,7 +336,7 @@ def _claude_digest(project, program, milestone, sub, client) -> StatusDigest:
         window=window, signals_block=signals_block)
 
     resp = client.messages.parse(
-        model=MODEL,
+        model=model,
         max_tokens=2000,
         system=[{
             "type": "text",
@@ -353,12 +356,12 @@ def _claude_digest(project, program, milestone, sub, client) -> StatusDigest:
 
 
 def build_digest(df_classified: pd.DataFrame, project: str, engine: str,
-                 client=None, recent_weeks: int = 3) -> StatusDigest:
+                 client=None, model=DEFAULT_MODEL, recent_weeks: int = 3) -> StatusDigest:
     full = df_classified[df_classified["project"] == project]
     program = full["program"].iloc[0]
     milestone = full["milestone"].iloc[0]
     max_week = df_classified["week"].max()
     sub = full[full["week"] > max_week - recent_weeks]
     if engine == "claude" and client is not None:
-        return _claude_digest(project, program, milestone, sub, client)
+        return _claude_digest(project, program, milestone, sub, client, model=model)
     return _rule_digest(project, program, milestone, sub)

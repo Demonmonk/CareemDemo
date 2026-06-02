@@ -37,10 +37,14 @@ Raw updates  →  AI classifier  →  Signal store  →  Health rollup  →  Sta
 
 | Engine | When | How |
 |---|---|---|
-| **Claude** (`claude-opus-4-8`) | An `ANTHROPIC_API_KEY` is present | Structured outputs (`messages.parse`) + prompt caching on the static instructions. Reads for *intent*. |
-| **Rule-based** | No key | Transparent keyword/heuristic classifier. Always available, zero cost — so graders can run it instantly. |
+| **Claude** (`claude-haiku-4-5` by default; Sonnet/Opus selectable) | A key is present **and** you click ⚡ Run Claude | Structured outputs (`messages.parse`) + prompt caching on the static instructions. Reads for *intent*. |
+| **Rule-based** | No key, or before you run Claude | Transparent keyword/heuristic classifier. Always available, zero cost — so graders can run it instantly. |
 
-The app picks the engine automatically and shows which one is live.
+The app shows free rule-based results by default and only spends API credit when
+you explicitly click **⚡ Run Claude** (≈5–10¢ on Haiku for the whole dataset).
+Results are cached per session, so it never re-bills for the same data. Haiku is
+the default because classification is a simple task — the right model for the
+job, not the most expensive one.
 
 ## Run it locally
 
@@ -99,9 +103,11 @@ Upload any CSV with at least `project` and `update_text` columns. `date`,
 
 ## Design notes
 
-- **Claude usage** follows current best practice: `claude-opus-4-8`, structured
-  outputs via `messages.parse`, and `cache_control` on the static system prompt
-  so the instruction prefix is prompt-cached across batched calls.
+- **Claude usage** follows current best practice: structured outputs via
+  `messages.parse`, `cache_control` on the static system prompt so the
+  instruction prefix is prompt-cached across batched calls, and **cost-aware
+  model selection** — Haiku 4.5 by default for a cheap classification task, with
+  Sonnet/Opus one click away.
 - **Graceful degradation** is a feature, not a hack — the rule engine keeps the
   demo honest and runnable, and the side-by-side accuracy view makes the value
   of the LLM explicit.
