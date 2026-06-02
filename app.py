@@ -327,31 +327,37 @@ with tab_project:
     st.line_chart(project_trend(project), color=["#b3261e", "#e08600", "#3b6fb3"])
 
     st.divider()
-    st.markdown("### From messy notes → clear signal")
-    st.caption("Left: what people actually wrote. Right: what Risk Radar pulled out of it.")
+    st.markdown("### What Risk Radar makes of each update")
+    st.markdown(
+        "**“Risk Radar” is the AI.** It reads every update this team wrote and, for "
+        "each one, decides what it really is and how urgent — so you don't have to. "
+        "Each card below shows the **raw update** with the radar's **read** stapled "
+        "underneath it. Newest first.")
+    st.markdown(
+        badge("⛔ Blocker", CAT_BADGE["blocker"][1]) + " work is stopped &nbsp; " +
+        badge("⚠️ Risk", CAT_BADGE["risk"][1]) + " threatens the deadline &nbsp; " +
+        badge("🔗 Dependency", CAT_BADGE["dependency"][1]) + " waiting on someone &nbsp; " +
+        badge("✅ On track", CAT_BADGE["on_track"][1]) + " all good",
+        unsafe_allow_html=True)
 
     pdata = clf[clf["project"] == project].sort_values("date", ascending=False)
-    left, right = st.columns(2)
-    with left:
-        st.markdown("#### 🗒️ Raw updates")
-        with st.container(height=420):
-            for _, u in pdata.iterrows():
-                st.markdown(
-                    f"<div style='border-bottom:1px solid #eee;padding:6px 0'>"
-                    f"<span style='color:#888;font-size:0.8em'>{u['date']} · {u['author']}</span><br>"
-                    f"{u['update_text']}</div>", unsafe_allow_html=True)
-    with right:
-        st.markdown("#### 🤖 What the radar saw")
-        with st.container(height=420):
-            for _, u in pdata.iterrows():
-                label, color = CAT_BADGE[u["category"]]
-                sev = "" if u["category"] == "on_track" else badge(u["severity"].upper(), "#555")
-                action = ("" if u["category"] == "on_track"
-                          else f"<br><span style='color:#666;font-size:0.85em'>→ {u['recommended_action']}</span>")
-                st.markdown(
-                    f"<div style='border-bottom:1px solid #eee;padding:6px 0'>"
-                    f"{badge(label, color)} &nbsp;{sev}{action}</div>",
-                    unsafe_allow_html=True)
+    with st.container(height=460):
+        for _, u in pdata.iterrows():
+            label, color = CAT_BADGE[u["category"]]
+            if u["category"] == "on_track":
+                read = f"{badge(label, color)} &nbsp;<span style='color:#666'>no action needed</span>"
+            else:
+                read = (f"{badge(label, color)} &nbsp;{badge(u['severity'].upper(), '#555')} "
+                        f"&nbsp;<span style='color:#444'>→ {u['recommended_action']}</span>")
+            st.markdown(
+                f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
+                f"padding:10px 12px;margin-bottom:10px'>"
+                f"<div style='color:#888;font-size:0.8em'>🗒️ {u['date']} · {u['author']}</div>"
+                f"<div style='margin:3px 0 7px 0'>“{u['update_text']}”</div>"
+                f"<div style='background:{color}14;border-left:3px solid {color};"
+                f"padding:7px 10px;border-radius:5px'>"
+                f"<span style='font-size:0.82em;color:#888'>🤖 RADAR READ</span><br>{read}</div>"
+                f"</div>", unsafe_allow_html=True)
 
     st.divider()
     st.markdown("### 📝 Status digest")
