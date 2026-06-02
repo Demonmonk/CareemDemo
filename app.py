@@ -1,12 +1,12 @@
 """
 Risk Radar — Streamlit app.
 
-An AI workflow that monitors a stream of messy project updates and flags risks,
-dependencies and blockers early, then rolls them up into a per-project status
-digest (health / risks / next steps).
+Reads a stream of messy project updates, uses AI to flag risks, blockers and
+dependencies, and turns the noise into a clear, human-readable status — per
+project and across the portfolio.
 
 Engines:
-  • Claude (claude-opus-4-8) when an Anthropic API key is available.
+  • Claude (Haiku 4.5 by default; Sonnet/Opus selectable) when a key is present.
   • A transparent rule-based fallback so the app runs live with no key.
 
 Run:  streamlit run app.py
@@ -24,20 +24,50 @@ import radar
 
 st.set_page_config(page_title="Risk Radar", page_icon="📡", layout="wide")
 
-DATA_PATH = os.path.join("data", "project_updates.csv")
+# --------------------------------------------------------------------------- #
+# Look-up tables
+# --------------------------------------------------------------------------- #
 
-CATEGORY_EMOJI = {"blocker": "⛔", "risk": "⚠️", "dependency": "🔗", "on_track": "✅"}
+CAT_BADGE = {
+    "blocker":    ("⛔ Blocker",    "#b3261e"),
+    "risk":       ("⚠️ Risk",       "#e08600"),
+    "dependency": ("🔗 Dependency", "#3b6fb3"),
+    "on_track":   ("✅ On track",   "#1e7d32"),
+}
 HEALTH_STYLE = {
-    "RED": ("🔴", "#b3261e"),
-    "AMBER": ("🟠", "#e08600"),
-    "GREEN": ("🟢", "#1e7d32"),
+    "RED":   ("🔴", "#b3261e", "At risk"),
+    "AMBER": ("🟠", "#e08600", "Needs attention"),
+    "GREEN": ("🟢", "#1e7d32", "Healthy"),
 }
 SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+# Plain-language descriptions so a viewer knows what each project actually is.
+PROJECT_INFO = {
+    "Wallet 2.0": "Next-gen digital wallet — tokenized cards, KYC, top-ups & refunds.",
+    "Settlement Engine": "Back-office engine that reconciles ledgers and settles transactions.",
+    "Mobile App Revamp": "Full redesign of the consumer app — navigation, offline mode, checkout.",
+    "Loyalty Program": "Points, tiers and rewards — the earn-and-burn loyalty system.",
+    "Lakehouse Migration": "Moving analytics off the legacy warehouse onto a modern lakehouse.",
+    "Exec Analytics Dashboard": "Executive KPI dashboard — revenue, retention and cohort views.",
+    "Kubernetes Migration": "Re-platforming services onto Kubernetes with autoscaling.",
+    "API Gateway Rollout": "New gateway — rate limiting, auth and canary routing for all services.",
+    "SOC 2 Type II": "Security compliance audit — evidence, controls and runbooks.",
+    "Merchant Onboarding Portal": "Self-serve portal for merchants to sign up and get risk-scored.",
+    "Payouts Reconciliation": "Matching merchant payouts to bank statements and handling exceptions.",
+    "Marketing Automation": "Segmentation, email templates and campaign scheduling for growth.",
+}
+
+
+def project_desc(name: str) -> str:
+    return PROJECT_INFO.get(name, "")
 
 
 # --------------------------------------------------------------------------- #
 # Data & engine plumbing
 # --------------------------------------------------------------------------- #
+
+DATA_PATH = os.path.join("data", "project_updates.csv")
+
 
 @st.cache_data(show_spinner=False)
 def load_default_data() -> pd.DataFrame:
@@ -66,34 +96,48 @@ def get_client(api_key: str):
         return None, str(e)
 
 
+def badge(text: str, color: str) -> str:
+    return (f"<span style='background:{color};color:#fff;padding:2px 9px;"
+            f"border-radius:999px;font-size:0.78em;font-weight:600;white-space:nowrap'>"
+            f"{text}</span>")
+
+
+def health_pill(health: str) -> str:
+    emoji, color, label = HEALTH_STYLE[health]
+    return (f"<span style='background:{color}22;color:{color};padding:3px 12px;"
+            f"border-radius:999px;font-weight:700'>{emoji} {health} · {label}</span>")
+
+
 # --------------------------------------------------------------------------- #
 # Sidebar — controls
 # --------------------------------------------------------------------------- #
 
 st.sidebar.title("📡 Risk Radar")
-st.sidebar.caption("Early-warning system for project delivery.")
+st.sidebar.caption("Turns messy project updates into a clear status.")
 
 st.sidebar.subheader("1 · Data")
 uploaded = st.sidebar.file_uploader(
-    "Project updates CSV", type="csv",
-    help="Needs at least: project, update_text. The bundled demo dataset is used otherwise.")
+    "Use your own updates (CSV)", type="csv",
+    help="Needs at least: project, update_text. Otherwise the demo dataset is used.")
 if uploaded is not None:
     raw = pd.read_csv(uploaded)
-    st.sidebar.success(f"Loaded {len(raw)} rows from upload.")
+    st.sidebar.success(f"Loaded {len(raw)} rows from your file.")
 else:
     raw = load_default_data()
-    st.sidebar.info(f"Using bundled demo dataset ({len(raw)} updates).")
+    st.sidebar.caption(f"Demo dataset loaded · {len(raw)} updates.")
 
-# Make sure expected columns exist; fill sensible defaults for uploads.
+# Backfill expected columns so uploads with fewer columns still work.
 for col, default in [("program", "—"), ("milestone", "—"), ("author", "—"),
                      ("role", "—"), ("team", "—")]:
     if col not in raw.columns:
         raw[col] = default
+if "update_id" not in raw.columns:
+    raw["update_id"] = [f"U{i:04d}" for i in range(1, len(raw) + 1)]
 if "week" not in raw.columns:
     if "date" in raw.columns:
         raw["date"] = pd.to_datetime(raw["date"], errors="coerce")
-        raw["week"] = raw["date"].dt.isocalendar().week.astype("Int64")
-        raw["week"] = raw["week"] - raw["week"].min() + 1
+        wk = raw["date"].dt.isocalendar().week.astype("Int64")
+        raw["week"] = (wk - wk.min() + 1).astype(int)
         raw["date"] = raw["date"].dt.date.astype(str)
     else:
         raw["week"] = 1
@@ -111,64 +155,49 @@ MODEL_CHOICES = {
     "Sonnet 4.6 — balanced": "claude-sonnet-4-6",
     "Opus 4.8 — most capable": "claude-opus-4-8",
 }
-
 use_claude = st.sidebar.toggle(
     "Use Claude", value=bool(default_key),
-    help="On: classify with the Anthropic API. Off: use the built-in rule-based engine (free).")
-api_key = ""
-model_id = "claude-haiku-4-5"
-run_claude = False
+    help="On: classify with the Anthropic API. Off: the built-in rule-based engine (free).")
+api_key, model_id, run_claude = "", "claude-haiku-4-5", False
 if use_claude:
-    api_key = st.sidebar.text_input(
-        "Anthropic API key", value=default_key, type="password",
-        help="Read from ANTHROPIC_API_KEY / st.secrets if set. Never stored.")
-    model_label = st.sidebar.selectbox("Model", list(MODEL_CHOICES), index=0)
-    model_id = MODEL_CHOICES[model_label]
-    run_claude = st.sidebar.button(
-        "⚡ Run Claude classification",
-        help="Spends a few cents of API credit (≈5–10¢ on Haiku for the full "
-             "dataset). Free rule-based results show until you click; results are "
-             "cached so it won't re-bill for the same data.")
+    api_key = st.sidebar.text_input("Anthropic API key", value=default_key, type="password",
+                                    help="Read from ANTHROPIC_API_KEY / secrets if set. Never stored.")
+    model_id = MODEL_CHOICES[st.sidebar.selectbox("Model", list(MODEL_CHOICES), index=0)]
+    run_claude = st.sidebar.button("⚡ Run Claude classification",
+                                   help="Spends ≈5–10¢ on Haiku for the whole dataset. "
+                                        "Free rule-based results show until you click; cached after.")
     if not api_key:
         st.sidebar.warning("No key provided — using the free rule-based engine.")
         use_claude = False
 
 st.sidebar.subheader("3 · Current-state window")
-recent_weeks = st.sidebar.slider(
-    "Health is computed from the last N weeks", 1, 6, 3,
-    help="Older updates age out so health reflects the current state.")
+recent_weeks = st.sidebar.slider("Health uses the last N weeks", 1, 6, 3,
+                                 help="Older updates age out so health reflects the present.")
 
 engine = "claude" if use_claude else "rule"
 
 
 # --------------------------------------------------------------------------- #
-# Run classification (cached for rules; session-stored for Claude)
+# Classification (never spends tokens unless the user clicks Run Claude)
 # --------------------------------------------------------------------------- #
 
 def run_classification(df, engine, api_key, model_id, run_claude):
-    """Returns (classified_df, active_engine). Never spends tokens unless the
-    user explicitly clicks Run Claude; free rule-based results show otherwise."""
     rule = classify_rule_based(df)
     if engine != "claude":
         return rule, "rule"
-
     fp = df_fingerprint(df) + "|" + model_id
     if st.session_state.get("clf_fp") == fp:
         return st.session_state["clf_df"], "claude"
-
     if not run_claude:
-        return rule, "rule-pending"  # Claude is on, but not yet run (no spend)
-
+        return rule, "rule-pending"
     client, err = get_client(api_key)
     if client is None:
         st.error(f"Could not start the Claude engine ({err}). Showing rule-based results.")
         return rule, "rule"
-
-    bar = st.progress(0.0, text=f"Classifying updates with {model_id}…")
+    bar = st.progress(0.0, text=f"Reading updates with {model_id}…")
     try:
-        out = radar.classify_updates(
-            df, "claude", client=client, model=model_id,
-            progress=lambda p: bar.progress(p, text=f"Classifying with {model_id}… {int(p*100)}%"))
+        out = radar.classify_updates(df, "claude", client=client, model=model_id,
+                                     progress=lambda p: bar.progress(p, text=f"Reading updates with {model_id}… {int(p*100)}%"))
     except Exception as e:  # noqa: BLE001
         bar.empty()
         st.error(f"Claude classification failed ({e}). Showing rule-based results.")
@@ -181,6 +210,37 @@ def run_classification(df, engine, api_key, model_id, run_claude):
 
 clf, active_engine = run_classification(raw, engine, api_key, model_id, run_claude)
 clf["sev_rank"] = clf["severity"].map(SEV_ORDER)
+roll = radar.portfolio_rollup(clf, recent_weeks=recent_weeks)
+max_week = int(clf["week"].max())
+window_mask = clf["week"] > max_week - recent_weeks
+
+
+# --------------------------------------------------------------------------- #
+# Small derived helpers
+# --------------------------------------------------------------------------- #
+
+def project_reason(project: str) -> tuple[str, str]:
+    """A plain-English 'what's wrong right now' line + its colour."""
+    sub = clf[(clf["project"] == project) & window_mask]
+    for cat in ("blocker", "risk", "dependency"):
+        hits = sub[sub["category"] == cat].sort_values("sev_rank")
+        if len(hits):
+            top = hits.iloc[0]
+            lead = {"blocker": "Blocked", "risk": "Risk", "dependency": "Waiting on"}[cat]
+            return f"{lead}: {top['update_text']}", CAT_BADGE[cat][1]
+    return "All recent updates are on track.", CAT_BADGE["on_track"][1]
+
+
+def project_trend(project: str) -> pd.DataFrame:
+    sub = clf[clf["project"] == project]
+    pivot = sub.pivot_table(index="week", columns="category", values="update_id",
+                            aggfunc="count", fill_value=0)
+    for c in ("blocker", "risk", "dependency"):
+        if c not in pivot.columns:
+            pivot[c] = 0
+    pivot = pivot.reindex(range(1, max_week + 1), fill_value=0)
+    return pivot[["blocker", "risk", "dependency"]].rename(
+        columns={"blocker": "Blockers", "risk": "Risks", "dependency": "Dependencies"})
 
 
 # --------------------------------------------------------------------------- #
@@ -188,142 +248,192 @@ clf["sev_rank"] = clf["severity"].map(SEV_ORDER)
 # --------------------------------------------------------------------------- #
 
 st.title("📡 Risk Radar")
-st.markdown(
-    "**An AI workflow that monitors project updates and flags risks, dependencies "
-    "and blockers early — then turns the noise into a clear status digest.**")
+st.markdown("#### Every team writes messy status updates. Risk Radar reads them all "
+            "and tells you — in plain English — which projects are in trouble and why.")
 
 if active_engine == "claude":
-    engine_label = f"🤖 Claude · {model_id}"
+    eng = f"🤖 Reading with Claude · {model_id}"
 elif active_engine == "rule-pending":
-    engine_label = "⚙️ Rule-based (free) — click ⚡ Run Claude in the sidebar to use the LLM"
+    eng = "⚙️ Free rule-based engine — click **⚡ Run Claude** in the sidebar for LLM reasoning"
 else:
-    engine_label = "⚙️ Rule-based engine (free, no API key)"
-st.caption(f"Engine: {engine_label}  ·  {len(raw)} updates  ·  "
-           f"{raw['project'].nunique()} projects  ·  health window: last {recent_weeks} weeks")
+    eng = "⚙️ Free rule-based engine (no API key needed)"
+st.caption(f"{eng}  ·  {len(raw)} updates  ·  {raw['project'].nunique()} projects  ·  "
+           f"health based on the last {recent_weeks} weeks")
 
-tab_radar, tab_signals, tab_digest, tab_about = st.tabs(
-    ["🛰️ Portfolio radar", "🚩 Flagged signals", "📝 Status digest", "ℹ️ How it works"])
+tab_overview, tab_project, tab_data, tab_about = st.tabs(
+    ["📊 Overview", "🔍 Project view", "📥 The data", "ℹ️ How it works"])
 
 
 # --------------------------------------------------------------------------- #
-# Tab 1 — Portfolio radar
+# Tab 1 — Overview (scannable, human-readable)
 # --------------------------------------------------------------------------- #
 
-with tab_radar:
-    roll = radar.portfolio_rollup(clf, recent_weeks=recent_weeks)
-
+with tab_overview:
     counts = roll["health"].value_counts().to_dict()
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🔴 Red", counts.get("RED", 0))
-    c2.metric("🟠 Amber", counts.get("AMBER", 0))
-    c3.metric("🟢 Green", counts.get("GREEN", 0))
-    c4.metric("Open blockers", int((clf[clf["week"] > clf["week"].max() - recent_weeks]["category"] == "blocker").sum()))
+    c1.metric("🔴 At risk", counts.get("RED", 0))
+    c2.metric("🟠 Needs attention", counts.get("AMBER", 0))
+    c3.metric("🟢 Healthy", counts.get("GREEN", 0))
+    c4.metric("⛔ Open blockers", int((clf[window_mask]["category"] == "blocker").sum()))
 
-    st.subheader("Project health")
-    st.caption("Sorted worst-first. Health is derived from the severity and mix "
-               "of signals in the selected window.")
+    st.markdown("Projects sorted **worst-first**. Each line is the AI's read of the "
+                "latest updates — no spreadsheet-reading required.")
 
-    def style_health(row):
-        emoji, color = HEALTH_STYLE.get(row["health"], ("", ""))
-        return [f"background-color: {color}22" for _ in row]
-
-    display = roll.copy()
-    display["health"] = display["health"].map(lambda h: f"{HEALTH_STYLE[h][0]} {h}")
-    display = display.rename(columns={
-        "on_track": "on track", "program": "Program", "project": "Project",
-        "milestone": "Milestone", "health": "Health"})
-    st.dataframe(
-        display[["Health", "Project", "Program", "Milestone",
-                 "blockers", "risks", "dependencies", "on track", "updates"]],
-        width='stretch', hide_index=True)
-
-    st.subheader("Signal mix by project (selected window)")
-    recent = clf[clf["week"] > clf["week"].max() - recent_weeks]
-    pivot = (recent.pivot_table(index="project", columns="category",
-                                values="update_id", aggfunc="count", fill_value=0))
-    for c in ["blocker", "risk", "dependency", "on_track"]:
-        if c not in pivot.columns:
-            pivot[c] = 0
-    pivot = pivot[["blocker", "risk", "dependency", "on_track"]]
-    st.bar_chart(pivot, color=["#b3261e", "#e08600", "#3b6fb3", "#1e7d32"])
+    for _, r in roll.iterrows():
+        emoji, color, label = HEALTH_STYLE[r["health"]]
+        reason, rcolor = project_reason(r["project"])
+        with st.container(border=True):
+            left, right = st.columns([3, 1])
+            with left:
+                st.markdown(
+                    f"{health_pill(r['health'])}  &nbsp; **{r['project']}** "
+                    f"<span style='color:#888'>· {r['program']}</span>",
+                    unsafe_allow_html=True)
+                st.caption(project_desc(r["project"]) or "—")
+                st.markdown(
+                    f"<span style='color:{rcolor}'>▸ {reason}</span>",
+                    unsafe_allow_html=True)
+            with right:
+                st.markdown(
+                    f"<div style='text-align:right;line-height:1.6'>"
+                    f"⛔ <b>{r['blockers']}</b> blockers<br>"
+                    f"⚠️ <b>{r['risks']}</b> risks<br>"
+                    f"🔗 <b>{r['dependencies']}</b> dependencies<br>"
+                    f"<span style='color:#888'>Milestone: {r['milestone']}</span></div>",
+                    unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------- #
-# Tab 2 — Flagged signals
+# Tab 2 — Project view (the before → after hero)
 # --------------------------------------------------------------------------- #
 
-with tab_signals:
-    st.subheader("Everything the radar flagged")
-    colf1, colf2, colf3 = st.columns(3)
-    cats = colf1.multiselect("Category", ["blocker", "risk", "dependency"],
-                             default=["blocker", "risk", "dependency"])
-    sevs = colf2.multiselect("Severity", ["critical", "high", "medium", "low"],
-                             default=["critical", "high", "medium"])
-    projects = colf3.multiselect("Project", sorted(clf["project"].unique()),
-                                 default=sorted(clf["project"].unique()))
+with tab_project:
+    worst_first = list(roll["project"])
+    project = st.selectbox("Choose a project", worst_first,
+                           help="Ordered worst-first. Start at the top to see the radar working.")
 
-    flagged = clf[clf["category"].isin(cats)
-                  & clf["severity"].isin(sevs)
-                  & clf["project"].isin(projects)].copy()
-    flagged = flagged.sort_values(["sev_rank", "week"], ascending=[True, False])
+    prow = roll[roll["project"] == project].iloc[0]
+    st.markdown(f"## {project}")
+    st.markdown(health_pill(prow["health"]) +
+                f" &nbsp;<span style='color:#888'>{prow['program']} · Milestone: {prow['milestone']}</span>",
+                unsafe_allow_html=True)
+    st.write(project_desc(project) or "")
 
-    st.caption(f"{len(flagged)} flagged signal(s).")
-    show = flagged.copy()
-    show["⚑"] = show["category"].map(CATEGORY_EMOJI)
-    show["severity"] = show["severity"].str.upper()
-    cols = ["⚑", "category", "severity", "date", "project", "update_text",
-            "depends_on", "recommended_action"]
-    cols = [c for c in cols if c in show.columns]
-    st.dataframe(show[cols], width='stretch', hide_index=True)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("⛔ Blockers", int(prow["blockers"]))
+    m2.metric("⚠️ Risks", int(prow["risks"]))
+    m3.metric("🔗 Dependencies", int(prow["dependencies"]))
+    m4.metric("✅ On track", int(prow["on_track"]))
 
-    st.download_button(
-        "⬇️ Download flagged signals (CSV)",
-        flagged.drop(columns=["sev_rank"]).to_csv(index=False).encode("utf-8"),
-        file_name="risk_radar_flagged.csv", mime="text/csv")
+    st.markdown("##### 📈 How it's trending")
+    st.caption("Weekly count of problems the radar flagged — watch them build (or clear).")
+    st.line_chart(project_trend(project), color=["#b3261e", "#e08600", "#3b6fb3"])
+
+    st.divider()
+    st.markdown("### From messy notes → clear signal")
+    st.caption("Left: what people actually wrote. Right: what Risk Radar pulled out of it.")
+
+    pdata = clf[clf["project"] == project].sort_values("date", ascending=False)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### 🗒️ Raw updates")
+        with st.container(height=420):
+            for _, u in pdata.iterrows():
+                st.markdown(
+                    f"<div style='border-bottom:1px solid #eee;padding:6px 0'>"
+                    f"<span style='color:#888;font-size:0.8em'>{u['date']} · {u['author']}</span><br>"
+                    f"{u['update_text']}</div>", unsafe_allow_html=True)
+    with right:
+        st.markdown("#### 🤖 What the radar saw")
+        with st.container(height=420):
+            for _, u in pdata.iterrows():
+                label, color = CAT_BADGE[u["category"]]
+                sev = "" if u["category"] == "on_track" else badge(u["severity"].upper(), "#555")
+                action = ("" if u["category"] == "on_track"
+                          else f"<br><span style='color:#666;font-size:0.85em'>→ {u['recommended_action']}</span>")
+                st.markdown(
+                    f"<div style='border-bottom:1px solid #eee;padding:6px 0'>"
+                    f"{badge(label, color)} &nbsp;{sev}{action}</div>",
+                    unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown("### 📝 Status digest")
+    st.caption("The one-paragraph brief a director could read in 20 seconds.")
+
+    digest_engine = "claude" if active_engine == "claude" else "rule"
+    rewrite = False
+    if active_engine == "claude":
+        rewrite = st.button("✨ Rewrite this digest with Claude")
+    with st.spinner("Writing digest…"):
+        client = None
+        if digest_engine == "claude" and (rewrite or st.session_state.get(f"dg_{project}")):
+            client, _ = get_client(api_key)
+            st.session_state[f"dg_{project}"] = True
+        digest = radar.build_digest(clf, project, "claude" if client else "rule",
+                                    client=client, model=model_id, recent_weeks=recent_weeks)
+
+    emoji, color, _ = HEALTH_STYLE[digest.health]
+    st.markdown(
+        f"<div style='padding:14px 18px;border-radius:10px;background:{color}1a;"
+        f"border-left:6px solid {color}'><h4 style='margin:0'>{emoji} {digest.health}</h4>"
+        f"<p style='margin:6px 0 0 0;font-size:1.05em'>{digest.headline}</p></div>",
+        unsafe_allow_html=True)
+    da, db = st.columns(2)
+    with da:
+        st.markdown("**⛔ Blockers**")
+        st.markdown("\n".join(f"- {b}" for b in digest.blockers) or "_None_")
+        st.markdown("**⚠️ Top risks**")
+        st.markdown("\n".join(f"- {r}" for r in digest.top_risks) or "_None_")
+    with db:
+        st.markdown("**🔗 Dependencies**")
+        st.markdown("\n".join(f"- {d}" for d in digest.dependencies) or "_None_")
+        st.markdown("**✅ Recommended next steps**")
+        st.markdown("\n".join(f"{i}. {s}" for i, s in enumerate(digest.next_steps, 1)) or "_None_")
 
 
 # --------------------------------------------------------------------------- #
-# Tab 3 — Status digest
+# Tab 3 — The data
 # --------------------------------------------------------------------------- #
 
-with tab_digest:
-    st.subheader("Status digest — messy notes → clear status")
-    project = st.selectbox("Project", sorted(clf["project"].unique()))
+with tab_data:
+    st.markdown("### The dataset behind the radar")
+    st.markdown(
+        f"**{len(raw)} project updates** across **{raw['project'].nunique()} projects** at a "
+        "fictional company, spanning ~10 weeks. It's fully synthetic — no real or confidential "
+        "data — and deliberately messy, seeded with real risks, blockers and cross-team "
+        "dependencies so you can watch the radar catch them.")
 
-    if st.button("Generate status digest", type="primary"):
-        with st.spinner("Summarizing…"):
-            client = None
-            digest_engine = "claude" if active_engine == "claude" else "rule"
-            if digest_engine == "claude":
-                client, _ = get_client(api_key)
-            digest = radar.build_digest(clf, project, digest_engine, client=client,
-                                        model=model_id, recent_weeks=recent_weeks)
-        emoji, color = HEALTH_STYLE.get(digest.health, ("", "#000"))
-        st.markdown(
-            f"<div style='padding:14px 18px;border-radius:10px;"
-            f"background:{color}1a;border-left:6px solid {color}'>"
-            f"<h3 style='margin:0'>{emoji} {digest.health} · {digest.project}</h3>"
-            f"<p style='margin:6px 0 0 0;font-size:1.05em'>{digest.headline}</p>"
-            f"<p style='margin:4px 0 0 0;color:#666'>Program: {digest.program} · "
-            f"Milestone: {digest.milestone}</p></div>",
-            unsafe_allow_html=True)
+    q = st.text_input("🔎 Search the updates", placeholder="e.g. KYC, blocked, payments…")
+    view = clf.copy()
+    proj_filter = st.multiselect("Filter by project", sorted(view["project"].unique()))
+    if proj_filter:
+        view = view[view["project"].isin(proj_filter)]
+    if q:
+        view = view[view["update_text"].str.contains(q, case=False, na=False)]
 
-        cda, cdb = st.columns(2)
-        with cda:
-            st.markdown("#### ⛔ Blockers")
-            st.markdown("\n".join(f"- {b}" for b in digest.blockers) or "_None_")
-            st.markdown("#### ⚠️ Top risks")
-            st.markdown("\n".join(f"- {r}" for r in digest.top_risks) or "_None_")
-        with cdb:
-            st.markdown("#### 🔗 Dependencies")
-            st.markdown("\n".join(f"- {d}" for d in digest.dependencies) or "_None_")
-            st.markdown("#### ✅ Recommended next steps")
-            st.markdown("\n".join(f"{i}. {s}" for i, s in enumerate(digest.next_steps, 1))
-                        or "_None_")
-    else:
-        st.info("Pick a project and generate its digest. "
-                "With Claude on, the summary is written by claude-opus-4-8; "
-                "otherwise it's assembled from the rule-based signals.")
+    cols = [c for c in ["date", "project", "author", "update_text",
+                        "category", "severity", "recommended_action"] if c in view.columns]
+    st.caption(f"Showing {len(view)} of {len(clf)} updates.")
+    st.dataframe(view[cols], width='stretch', hide_index=True)
+
+    st.download_button("⬇️ Download the full dataset (CSV)",
+                       raw.to_csv(index=False).encode("utf-8"),
+                       file_name="project_updates.csv", mime="text/csv")
+    st.info("📎 **Sharing it publicly:** this same file lives in the repo at "
+            "`data/project_updates.csv`. Make the GitHub repo public and link directly "
+            "to that file for your submission's 'public dataset link'.")
+
+    with st.expander("What each column means"):
+        st.markdown("""
+| Column | Meaning |
+|---|---|
+| `date`, `week` | When the update was written |
+| `program`, `project`, `milestone` | What it's about and the deadline it affects |
+| `author`, `role`, `team` | Who wrote it |
+| `update_text` | **The raw, messy update — the only thing the AI reads** |
+| `category`, `severity`, … | **Added by Risk Radar** (the AI's output) |
+| `signal_truth`, `severity_truth` | Hidden "correct answer" planted in the data — used only to score accuracy; the AI never sees it |
+""")
 
 
 # --------------------------------------------------------------------------- #
@@ -332,41 +442,38 @@ with tab_digest:
 
 with tab_about:
     st.markdown("""
+### The idea in one line
+Status updates pile up faster than anyone can read them. Risk Radar reads every
+one, classifies it, and surfaces the trouble **before** it hits the deadline.
+
 ### The workflow
-
 ```
-Raw updates  →  AI classifier  →  Signal store  →  Health rollup  →  Status digest
- (messy text)   risk/blocker/      structured       🔴🟠🟢 per       executive
-                dependency/        signals          project          summary
-                on-track + sev
+Raw updates  →  AI reads each one  →  Structured signal  →  Health rollup  →  Status digest
+ (messy text)   risk / blocker /      + severity +          🔴🟠🟢 per        plain-English
+                dependency / ok       next action           project          brief
 ```
 
-1. **Ingest.** A stream of free-text updates (standups, status emails, ticket
-   comments). Bring your own CSV or use the bundled synthetic dataset.
-2. **Classify.** Each update becomes one structured signal — *blocker / risk /
-   dependency / on-track* + severity + affected milestone + a recommended
-   action. Claude does this with structured outputs; a keyword/heuristic engine
-   is the offline fallback.
-3. **Roll up.** Recent signals are scored into a 🔴🟠🟢 health per project.
-4. **Summarize.** The *Status digest* tab turns a project's signals into a
-   health / risks / next-steps brief — the "messy notes → clear status" step.
+1. **Ingest** free-text updates (standups, status emails, ticket comments).
+2. **Classify** each into one signal — blocker / risk / dependency / on-track —
+   with a severity and a recommended next step.
+3. **Roll up** recent signals into a 🔴🟠🟢 health per project.
+4. **Summarize** any project into a director-ready digest.
 
-**Why Claude + a fallback?** The app always runs live (graders need no key),
-but flips to real LLM reasoning the moment a key is present. Claude reads for
-*intent* — it can tell a casual "blocked on lunch" from a halted production
-rollout — which keyword rules cannot.
+### Why Claude *and* a free fallback
+The app always runs live so anyone can try it with no key. Add an Anthropic key
+and it flips to real LLM reasoning — Claude reads for *intent*, telling a casual
+"blocked on lunch" from a halted production rollout, which keyword rules can't.
+It defaults to **Haiku 4.5** because classification is a simple task — the
+right-sized model, not the priciest.
 """)
-
     if has_truth:
-        st.markdown("### Engine accuracy vs. planted ground truth")
-        st.caption("The synthetic dataset carries a hidden label per update "
-                   "(`signal_truth`). The radar never sees it — it's used only here "
-                   "to measure how well the live classification recovers the planted signal.")
+        st.markdown("### Does it actually work? (accuracy vs. planted answers)")
+        st.caption("The synthetic data carries a hidden 'correct' label per update. The radar "
+                   "never sees it — it's used only here to measure how often the AI agrees.")
         agree = (clf["category"] == clf["signal_truth"]).mean()
+        eng_name = "Claude" if active_engine == "claude" else "Rule-based engine"
+        st.metric(f"{eng_name} agreement with the planted answer", f"{agree*100:.1f}%")
         cm = (pd.crosstab(clf["signal_truth"], clf["category"])
               .reindex(index=radar.CATEGORIES, columns=radar.CATEGORIES, fill_value=0))
-        eng_name = "Claude" if active_engine == "claude" else "Rule-based"
-        m1, _ = st.columns([1, 3])
-        m1.metric(f"{eng_name} agreement", f"{agree*100:.1f}%")
-        st.caption("Confusion matrix — rows: planted truth, cols: predicted")
+        st.caption("Rows = correct answer · Columns = what the radar predicted")
         st.dataframe(cm, width='content')
