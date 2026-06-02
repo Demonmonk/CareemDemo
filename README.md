@@ -1,123 +1,128 @@
-# 📡 Risk Radar
+# 📡 Risk Radar — AI early-warning for project delivery
 
-**An AI workflow that monitors project updates to flag risks, dependencies and
-blockers early — and rolls them into a clear status digest (health · risks ·
-next steps).**
+> Take-home submission for the AI challenge. It tackles **Challenge 1 — Risk
+> Radar**, and folds in **Challenge 3 — Status Summarizer** as one of its outputs.
 
-Built as a take-home AI challenge. It tackles two of the three prompts at once:
+**The idea in one line:** teams write messy status updates faster than anyone can
+read them. Risk Radar reads every update with AI, flags **risks, blockers and
+dependencies early**, and turns the noise into a clear, per-project status — in
+plain English, with the reasoning shown.
 
-- **Risk Radar** — the core monitoring workflow.
-- **Status Summarizer** — falls out of it as the per-project status digest.
-
-> Live demo runs **with no API key** thanks to a built-in rule-based engine. Add
-> an Anthropic key and it flips to real LLM reasoning with `claude-opus-4-8`.
+| | |
+|---|---|
+| 🔗 **Live demo** | _add your Streamlit URL here_ |
+| 📊 **Dataset** | [`data/project_updates.csv`](data/project_updates.csv) |
+| 📝 **100-word summary** | [`SUMMARY.md`](SUMMARY.md) |
 
 ---
 
 ## What it does
 
 ```
-Raw updates  →  AI classifier  →  Signal store  →  Health rollup  →  Status digest
- (messy text)   risk/blocker/      structured       🔴🟠🟢 per       executive
-                dependency/        signals          project          summary
-                on-track + sev
+Raw updates  →  AI reads each one  →  Structured signal  →  Health rollup  →  Status digest
+ (messy text)   risk / blocker /      + severity +          🔴🟠🟢 per        plain-English
+                dependency / ok       why + next action     project          brief
 ```
 
 1. **Ingest** a stream of free-text updates — standups, status emails, ticket
-   comments. The kind of noise where *"backend slipped again, still waiting on
-   the payments team, might miss the launch"* hides a risk, a dependency **and**
-   a blocker in one sentence.
-2. **Classify** each update into one structured signal: `blocker` / `risk` /
-   `dependency` / `on_track`, plus severity, affected milestone, what it depends
-   on, a rationale, and a recommended action.
-3. **Roll up** recent signals into a 🔴 / 🟠 / 🟢 health per project.
+   comments. The kind of noise where *"the price-cap rules depend on the ETA
+   service from Maps, which has slipped, might miss Eid readiness"* hides a
+   risk **and** a dependency in one sentence.
+2. **Classify** each update into one structured signal — `blocker` / `risk` /
+   `dependency` / `on-track` — with a **severity**, the **reason it was
+   flagged**, and a **recommended next step**.
+3. **Roll up** recent signals into a 🔴 / 🟠 / 🟢 health for every project.
 4. **Summarize** any project into a director-ready status digest.
 
-## Two engines, one interface
+## Why it's more than a prompt
 
-| Engine | When | How |
-|---|---|---|
-| **Claude** (`claude-haiku-4-5`, fixed) | A key is configured **and** you click ⚡ Run AI analysis | Structured outputs (`messages.parse`) + prompt caching on the static instructions. Reads for *intent*. |
-| **Rule-based** | No key, or before you run AI | Transparent keyword/heuristic classifier. Always available, zero cost — so graders can run it instantly. |
+- It's a **monitoring workflow**, not a one-off prompt — ingest → classify →
+  roll up → summarize.
+- Every signal is **auditable**: the radar shows *why* it flagged each update
+  (it quotes the trigger), which is the whole point of an early-warning system.
+- The **status digest** (health · risks · next steps) falls out for free —
+  that's Challenge 3 covered by the same pipeline.
 
-The app shows free rule-based results by default and only spends API credit when
-you explicitly click **⚡ Run AI analysis** (≈5–10¢ for the whole dataset).
-Results are cached per session, so it never re-bills for the same data.
+## Try it in 30 seconds
 
-The model is **fixed to a fast, low-cost model under the hood** — there is no
-model picker in the UI, so a visitor can't accidentally run an expensive model.
-The API key is read only from server-side secrets and is **never shown or
-entered in the UI**.
+1. Open the live demo (link above) — it runs immediately, no login.
+2. **Overview** tab → projects sorted worst-first. **Click a red one** to drill
+   in and see *why* the AI flagged what it did.
+3. **Project view** → see the **raw update next to the AI's read of it**, plus a
+   problems-over-time trend and a status digest.
+4. **The data** tab → search and browse the full dataset.
 
-## Run it locally
+## Run locally
 
 ```bash
 pip install -r requirements.txt
-python generate_dataset.py        # writes data/project_updates.csv (already committed)
 streamlit run app.py
 ```
 
-Optional — enable Claude:
+The app runs out of the box on a free, built-in engine — **no API key needed**.
+To enable AI analysis, provide an Anthropic key via the environment or
+`.streamlit/secrets.toml`:
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-streamlit run app.py
+```toml
+# .streamlit/secrets.toml   (git-ignored)
+ANTHROPIC_API_KEY = "sk-ant-..."
 ```
 
-The key is read only from the environment or `.streamlit/secrets.toml`
-(git-ignored) — it is never entered or shown in the UI.
+The key is read only from the server side — it is **never entered or shown in
+the UI**.
 
-## Deploy (Streamlit Community Cloud)
+## How the AI works
 
-1. Push this repo to GitHub.
-2. On [share.streamlit.io](https://share.streamlit.io), point a new app at
-   `app.py`.
-3. (Optional) Add `ANTHROPIC_API_KEY` under **App → Settings → Secrets**.
-
-Runs out of the box without the key.
+- Built on **Claude** via the Anthropic API, using **structured outputs**
+  (`messages.parse`) so every classification comes back as reliable, typed JSON,
+  and **prompt caching** on the static instructions to keep repeated calls cheap.
+- **Cost-aware:** classification is a simple task, so it runs on a fast,
+  low-cost model by default — the right-sized tool for the job.
+- **Graceful fallback:** a transparent, rule-based engine means the app is fully
+  functional with **no key**, so it can be evaluated instantly. Turn on AI
+  analysis for sharper, intent-aware reading (it can tell a casual "blocked on
+  lunch" from a halted production rollout).
+- **Guardrails for a public demo:** a hard, shared spend cap stops abuse, and
+  results are cached so nothing is ever re-charged.
 
 ## The dataset
 
-`data/project_updates.csv` — **self-generated, synthetic updates** across 12
-projects spanning Careem-style lines of business (Careem Pay, Rides, Careem
-Food, Quik, platform and compliance), over ~10 weeks.
+[`data/project_updates.csv`](data/project_updates.csv) — **synthetic project
+updates** across **12 projects** spanning Careem-style lines of business
+(Careem Pay, Rides, Careem Food, Quik, platform and compliance), over ~10 weeks.
+It's deliberately messy and seeded with risks, blockers and cross-team
+dependencies so the radar can be seen catching them.
 
 > **Disclaimer:** This is **illustrative mock data**, hand-generated for this
 > demo. It is **not** real Careem data and is **not** affiliated with, endorsed
 > by, or sourced from Careem — the company and product names are used only to
 > make the example domain-relevant. No real or confidential data is included.
 
-It's deliberately messy and seeded with risks, blockers and cross-team
-dependencies so the radar can be seen catching them. Each row also carries a
-**hidden ground-truth label** (`signal_truth`, `severity_truth`) that the radar
-never sees — used only on the *How it works* tab to report classification
-accuracy (the rule engine alone recovers the planted signal ~93% of the time).
+Each row also carries a **hidden ground-truth label** (`signal_truth`) that the
+radar never sees — used only to measure accuracy. The rule-based engine alone
+recovers the planted signal **~94%** of the time; with AI analysis on, the
+reasoning is sharper still. Regenerate the data any time with
+`python generate_dataset.py` (deterministic, seeded).
 
-Regenerate it any time with `python generate_dataset.py` (deterministic, seeded).
-
-### Bring your own data
-Upload any CSV with at least `project` and `update_text` columns. `date`,
-`program`, `milestone`, `author`, etc. are used if present.
-
-## Files
+## Repo layout
 
 | File | Purpose |
 |---|---|
-| `app.py` | Streamlit UI (radar, flagged signals, status digest, accuracy) |
-| `radar.py` | Core workflow — both engines, health rollup, digests |
-| `prompts.py` | The prompts (the "Status Summarizer" prompt engineering) |
-| `generate_dataset.py` | Reproducible synthetic dataset generator |
-| `data/project_updates.csv` | The public demo dataset |
+| `app.py` | Streamlit app — Overview, Project view, Data, How-it-works |
+| `radar.py` | The workflow — both engines, health rollup, status digest |
+| `prompts.py` | The prompts (the Status-Summarizer prompt engineering) |
+| `generate_dataset.py` | Reproducible synthetic-dataset generator |
+| `data/project_updates.csv` | The public dataset |
+| `SUMMARY.md` | The 100-word summary |
 
-## Design notes
+## Design decisions worth noting
 
-- **Claude usage** follows current best practice: structured outputs via
-  `messages.parse`, `cache_control` on the static system prompt so the
-  instruction prefix is prompt-cached across batched calls, and a **cost-aware,
-  fixed low-cost model** (`claude-haiku-4-5`) — the right-sized tool for a simple
-  classification task. No model picker, so cost can't run away.
-- **Graceful degradation** is a feature, not a hack — the rule engine keeps the
-  demo honest and runnable, and the side-by-side accuracy view makes the value
-  of the LLM explicit.
-- **Synthetic-with-ground-truth** is the rigorous choice for an evaluation: you
-  can show *input → correctly flagged signal*, not just vibes.
+- **Framed as a workflow**, not a chatbot — the value is the pipeline and the
+  rollup, not a single clever prompt.
+- **Structured outputs + a rule-based fallback** make it reliable *and* always
+  runnable.
+- **Synthetic data with planted ground truth** is the rigorous choice for an
+  evaluation — you can show *input → correctly-flagged signal*, with a measured
+  accuracy number rather than vibes.
+- **Production-minded touches** — server-side-only secrets, a hard spend cap,
+  and result caching — because a public demo has to be safe and cheap to run.
