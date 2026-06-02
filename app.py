@@ -46,18 +46,18 @@ SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 # Plain-language descriptions so a viewer knows what each project actually is.
 PROJECT_INFO = {
-    "Wallet 2.0": "Next-gen digital wallet — tokenized cards, KYC, top-ups & refunds.",
-    "Settlement Engine": "Back-office engine that reconciles ledgers and settles transactions.",
-    "Mobile App Revamp": "Full redesign of the consumer app — navigation, offline mode, checkout.",
-    "Loyalty Program": "Points, tiers and rewards — the earn-and-burn loyalty system.",
-    "Lakehouse Migration": "Moving analytics off the legacy warehouse onto a modern lakehouse.",
-    "Exec Analytics Dashboard": "Executive KPI dashboard — revenue, retention and cohort views.",
-    "Kubernetes Migration": "Re-platforming services onto Kubernetes with autoscaling.",
-    "API Gateway Rollout": "New gateway — rate limiting, auth and canary routing for all services.",
-    "SOC 2 Type II": "Security compliance audit — evidence, controls and runbooks.",
-    "Merchant Onboarding Portal": "Self-serve portal for merchants to sign up and get risk-scored.",
-    "Payouts Reconciliation": "Matching merchant payouts to bank statements and handling exceptions.",
-    "Marketing Automation": "Segmentation, email templates and campaign scheduling for growth.",
+    "Wallet Top-up & Cards": "Careem Pay wallet — top-ups, card issuance, KYC and refunds.",
+    "Send & Request Money": "Peer-to-peer money transfers inside Careem Pay.",
+    "Captain App 4.0": "Redesigned Captain (driver) app — navigation, earnings, trip flow.",
+    "Surge Pricing Engine v2": "Dynamic ride pricing — demand prediction and surge zones.",
+    "Restaurant Onboarding Portal": "Self-serve sign-up for restaurants joining Careem Food.",
+    "Live Order Tracking": "Real-time courier tracking and ETAs for Careem Food orders.",
+    "15-min Grocery Fulfilment": "Quik dark-store picking, inventory and routing for 15-min grocery.",
+    "Super-App Kubernetes Migration": "Re-platforming Careem services onto Kubernetes.",
+    "API Gateway Consolidation": "One gateway for auth, rate limiting and routing across services.",
+    "PCI-DSS Compliance (Careem Pay)": "Payment-security audit — controls, evidence and runbooks.",
+    "Captain Earnings & Payouts": "Captain earnings ledger, payouts and instant cashout.",
+    "Careem Plus Revamp": "Careem Plus subscription — benefits, billing and experiments.",
 }
 
 
@@ -506,10 +506,12 @@ with tab_project:
 with tab_data:
     st.markdown("### The dataset behind the radar")
     st.markdown(
-        f"**{len(raw)} project updates** across **{raw['project'].nunique()} projects** at a "
-        "fictional company, spanning ~10 weeks. It's fully synthetic — no real or confidential "
-        "data — and deliberately messy, seeded with real risks, blockers and cross-team "
-        "dependencies so you can watch the radar catch them.")
+        f"**{len(raw)} project updates** across **{raw['project'].nunique()} projects** spanning "
+        "Careem-style lines of business — Careem Pay, Rides, Careem Food, Quik, platform and "
+        "compliance — over ~10 weeks. It's deliberately messy, seeded with risks, blockers and "
+        "cross-team dependencies so you can watch the radar catch them.")
+    st.caption("⚠️ Illustrative mock data — hand-generated for this demo. It is **not** real "
+               "Careem data and is not affiliated with, endorsed by, or sourced from Careem.")
 
     q = st.text_input("🔎 Search the updates", placeholder="e.g. KYC, blocked, payments…")
     view = clf.copy()

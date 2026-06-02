@@ -78,9 +78,14 @@ Runs out of the box without the key.
 
 ## The dataset
 
-`data/project_updates.csv` — **218 self-generated, synthetic updates** across 12
-projects and 6 programs at a fictional generic enterprise ("Helios Group"),
-spanning 10 weeks. No real or confidential data.
+`data/project_updates.csv` — **self-generated, synthetic updates** across 12
+projects spanning Careem-style lines of business (Careem Pay, Rides, Careem
+Food, Quik, platform and compliance), over ~10 weeks.
+
+> **Disclaimer:** This is **illustrative mock data**, hand-generated for this
+> demo. It is **not** real Careem data and is **not** affiliated with, endorsed
+> by, or sourced from Careem — the company and product names are used only to
+> make the example domain-relevant. No real or confidential data is included.
 
 It's deliberately messy and seeded with risks, blockers and cross-team
 dependencies so the radar can be seen catching them. Each row also carries a

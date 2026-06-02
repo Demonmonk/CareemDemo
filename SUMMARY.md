@@ -9,5 +9,6 @@ digest (the "Status Summarizer" prompt). It runs on Claude with structured
 outputs and prompt caching — defaulting to the cost-efficient Haiku 4.5 for a
 simple classification task (Sonnet/Opus selectable) — and ships with a
 rule-based fallback so the live Streamlit demo works without an API key. Data is
-a self-generated, fully synthetic dataset of 218 updates — with hidden
-ground-truth labels to measure accuracy.
+a self-generated, synthetic dataset themed around Careem's lines of business
+(illustrative mock data, not real Careem data) — with hidden ground-truth labels
+to measure accuracy.
