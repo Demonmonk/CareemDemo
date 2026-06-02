@@ -156,7 +156,8 @@ def _rule_classify_df(df: pd.DataFrame) -> pd.DataFrame:
 # Claude engine (structured outputs + prompt caching)
 # --------------------------------------------------------------------------- #
 
-def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=None) -> pd.DataFrame:
+def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=None,
+                        on_usage=None, should_continue=None) -> pd.DataFrame:
     from pydantic import BaseModel
 
     class UpdateClassification(BaseModel):
@@ -179,6 +180,10 @@ def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=
     chunks = [rows[i:i + chunk_size] for i in range(0, len(rows), chunk_size)]
 
     for ci, chunk in enumerate(chunks):
+        # Budget guard — stop calling the API if the cap is hit; remaining rows
+        # fall back to the rule-based classifier below.
+        if should_continue is not None and not should_continue():
+            break
         payload = [{"update_id": r["update_id"],
                     "project": r["project"],
                     "update_text": r["update_text"]} for r in chunk]
@@ -196,6 +201,8 @@ def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=
             messages=[{"role": "user", "content": user}],
             output_format=ClassificationBatch,
         )
+        if on_usage is not None and getattr(resp, "usage", None) is not None:
+            on_usage(resp.usage)
         parsed = resp.parsed_output
         if parsed:
             for item in parsed.items:
@@ -224,11 +231,13 @@ def _claude_classify_df(df: pd.DataFrame, client, model=DEFAULT_MODEL, progress=
 # --------------------------------------------------------------------------- #
 
 def classify_updates(df: pd.DataFrame, engine: str, client=None,
-                     model=DEFAULT_MODEL, progress=None) -> pd.DataFrame:
+                     model=DEFAULT_MODEL, progress=None,
+                     on_usage=None, should_continue=None) -> pd.DataFrame:
     if engine == "claude":
         if client is None:
             raise ValueError("Claude engine requires an Anthropic client.")
-        return _claude_classify_df(df, client, model=model, progress=progress)
+        return _claude_classify_df(df, client, model=model, progress=progress,
+                                   on_usage=on_usage, should_continue=should_continue)
     return _rule_classify_df(df)
 
 
@@ -325,7 +334,8 @@ def _rule_digest(project: str, program: str, milestone: str, sub: pd.DataFrame) 
     )
 
 
-def _claude_digest(project, program, milestone, sub, client, model=DEFAULT_MODEL) -> StatusDigest:
+def _claude_digest(project, program, milestone, sub, client, model=DEFAULT_MODEL,
+                   on_usage=None) -> StatusDigest:
     from pydantic import BaseModel
 
     class Digest(BaseModel):
@@ -358,6 +368,8 @@ def _claude_digest(project, program, milestone, sub, client, model=DEFAULT_MODEL
         messages=[{"role": "user", "content": user}],
         output_format=Digest,
     )
+    if on_usage is not None and getattr(resp, "usage", None) is not None:
+        on_usage(resp.usage)
     d = resp.parsed_output
     if not d:
         return _rule_digest(project, program, milestone, sub)
@@ -368,12 +380,14 @@ def _claude_digest(project, program, milestone, sub, client, model=DEFAULT_MODEL
 
 
 def build_digest(df_classified: pd.DataFrame, project: str, engine: str,
-                 client=None, model=DEFAULT_MODEL, recent_weeks: int = 3) -> StatusDigest:
+                 client=None, model=DEFAULT_MODEL, recent_weeks: int = 3,
+                 on_usage=None) -> StatusDigest:
     full = df_classified[df_classified["project"] == project]
     program = full["program"].iloc[0]
     milestone = full["milestone"].iloc[0]
     max_week = df_classified["week"].max()
     sub = full[full["week"] > max_week - recent_weeks]
     if engine == "claude" and client is not None:
-        return _claude_digest(project, program, milestone, sub, client, model=model)
+        return _claude_digest(project, program, milestone, sub, client, model=model,
+                              on_usage=on_usage)
     return _rule_digest(project, program, milestone, sub)

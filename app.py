@@ -15,7 +15,10 @@ Run:  streamlit run app.py
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import tempfile
+import threading
 
 import pandas as pd
 import streamlit as st
@@ -96,6 +99,72 @@ def get_client(api_key: str):
         return None, str(e)
 
 
+# --------------------------------------------------------------------------- #
+# Budget guard — a hard, shared spend cap so a public bot can't drain credit.
+# Spend is tracked from real token usage and shared across ALL visitors of this
+# app instance (not per-session), so opening many tabs can't bypass it.
+# --------------------------------------------------------------------------- #
+
+def _secret(name: str, default: str = "") -> str:
+    v = os.environ.get(name, "")
+    if not v:
+        try:
+            v = st.secrets.get(name, "")
+        except Exception:  # noqa: BLE001
+            v = ""
+    return v or default
+
+
+BUDGET_CAP = float(_secret("AI_BUDGET_USD", "0.50") or "0.50")
+PER_SESSION_RUNS = int(_secret("AI_MAX_RUNS_PER_SESSION", "5") or "5")
+_LEDGER_PATH = os.path.join(tempfile.gettempdir(), "risk_radar_usage.json")
+PRICES = {  # ($/1M input, $/1M output)
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-4-8": (5.0, 25.0),
+}
+
+
+@st.cache_resource
+def _ledger():
+    led = {"spend": 0.0, "lock": threading.Lock()}
+    try:
+        if os.path.exists(_LEDGER_PATH):
+            with open(_LEDGER_PATH) as f:
+                led["spend"] = float(json.load(f).get("spend", 0.0))
+    except Exception:  # noqa: BLE001
+        pass
+    return led
+
+
+def cost_of(usage, model: str) -> float:
+    pin, pout = PRICES.get(model, (1.0, 5.0))
+    g = lambda a: getattr(usage, a, 0) or 0  # noqa: E731
+    return (g("input_tokens") * pin
+            + g("output_tokens") * pout
+            + g("cache_creation_input_tokens") * pin * 1.25
+            + g("cache_read_input_tokens") * pin * 0.1) / 1_000_000
+
+
+def add_usage(usage, model: str) -> None:
+    led = _ledger()
+    with led["lock"]:
+        led["spend"] += cost_of(usage, model)
+        try:
+            with open(_LEDGER_PATH, "w") as f:
+                json.dump({"spend": led["spend"]}, f)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def budget_used() -> float:
+    return _ledger()["spend"]
+
+
+def budget_ok() -> bool:
+    return budget_used() < BUDGET_CAP
+
+
 def badge(text: str, color: str) -> str:
     return (f"<span style='background:{color};color:#fff;padding:2px 9px;"
             f"border-radius:999px;font-size:0.78em;font-weight:600;white-space:nowrap'>"
@@ -146,11 +215,7 @@ has_truth = "signal_truth" in raw.columns
 st.sidebar.subheader("2 · AI analysis")
 # The API key is read ONLY from the server-side environment / Streamlit secrets.
 # It is never shown in the UI and there is no input box — nothing to reveal.
-default_key = os.environ.get("ANTHROPIC_API_KEY", "")
-try:
-    default_key = default_key or st.secrets.get("ANTHROPIC_API_KEY", "")
-except Exception:  # noqa: BLE001 — no secrets file is fine
-    pass
+default_key = _secret("ANTHROPIC_API_KEY", "")
 
 # Fixed, low-cost model under the hood — not user-selectable.
 MODEL_ID = "claude-haiku-4-5"
@@ -159,10 +224,23 @@ have_key = bool(default_key)
 
 run_ai = False
 if have_key:
+    used = budget_used()
+    exhausted = used >= BUDGET_CAP
+    runs = st.session_state.get("ai_runs", 0)
+    session_capped = runs >= PER_SESSION_RUNS
     run_ai = st.sidebar.button(
         "⚡ Run AI analysis",
-        help="Reads every update with AI for sharper results. The free built-in "
-             "engine shows until you click; results are cached so it won't re-run.")
+        disabled=exhausted or session_capped,
+        help="Reads every update with AI. Free engine shows until you click; "
+             "results are cached so it won't re-run or re-charge.")
+    st.sidebar.progress(min(used / BUDGET_CAP, 1.0) if BUDGET_CAP else 0,
+                        text=f"AI budget: ${used:.2f} / ${BUDGET_CAP:.2f}")
+    if exhausted:
+        st.sidebar.error("AI paused — shared budget cap reached. Everyone gets the "
+                         "free engine now.")
+    elif session_capped:
+        st.sidebar.warning(f"AI run limit reached for this session "
+                           f"({PER_SESSION_RUNS}). The free engine still works.")
 else:
     st.sidebar.caption("Showing the free built-in engine. Deeper AI analysis can be "
                        "enabled by the app owner via a key in the app's secrets.")
@@ -178,34 +256,41 @@ engine = "claude" if have_key else "rule"
 # Classification (never spends tokens unless the user clicks Run Claude)
 # --------------------------------------------------------------------------- #
 
-def run_classification(df, engine, api_key, model_id, run_claude):
+def run_classification(df, engine, api_key, model_id, run_ai):
     rule = classify_rule_based(df)
     if engine != "claude":
         return rule, "rule"
     fp = df_fingerprint(df) + "|" + model_id
     if st.session_state.get("clf_fp") == fp:
         return st.session_state["clf_df"], "claude"
-    if not run_claude:
+    if not run_ai:
         return rule, "rule-pending"
+    if not budget_ok():
+        st.warning("AI budget cap reached — showing the free rule-based engine.")
+        return rule, "rule"
     client, err = get_client(api_key)
     if client is None:
-        st.error(f"Could not start the Claude engine ({err}). Showing rule-based results.")
+        st.error(f"Could not start AI analysis ({err}). Showing free results.")
         return rule, "rule"
-    bar = st.progress(0.0, text=f"Reading updates with {model_id}…")
+    bar = st.progress(0.0, text="Reading updates with AI…")
     try:
-        out = radar.classify_updates(df, "claude", client=client, model=model_id,
-                                     progress=lambda p: bar.progress(p, text=f"Reading updates with {model_id}… {int(p*100)}%"))
+        out = radar.classify_updates(
+            df, "claude", client=client, model=model_id,
+            progress=lambda p: bar.progress(p, text=f"Reading updates with AI… {int(p*100)}%"),
+            on_usage=lambda u: add_usage(u, model_id),
+            should_continue=budget_ok)
     except Exception as e:  # noqa: BLE001
         bar.empty()
-        st.error(f"Claude classification failed ({e}). Showing rule-based results.")
+        st.error(f"AI analysis failed ({e}). Showing free results.")
         return rule, "rule"
     bar.empty()
+    st.session_state["ai_runs"] = st.session_state.get("ai_runs", 0) + 1
     st.session_state["clf_fp"] = fp
     st.session_state["clf_df"] = out
     return out, "claude"
 
 
-clf, active_engine = run_classification(raw, engine, api_key, model_id, run_ai)
+clf, active_engine = run_classification(raw, engine, api_key, MODEL_ID, run_ai)
 clf["sev_rank"] = clf["severity"].map(SEV_ORDER)
 roll = radar.portfolio_rollup(clf, recent_weeks=recent_weeks)
 max_week = int(clf["week"].max())
@@ -377,17 +462,23 @@ with tab_project:
     st.markdown("### 📝 Status digest")
     st.caption("The one-paragraph brief a director could read in 20 seconds.")
 
-    digest_engine = "claude" if active_engine == "claude" else "rule"
+    dg_key = f"dg|{project}|{df_fingerprint(raw)}|{recent_weeks}"
     rewrite = False
     if active_engine == "claude":
-        rewrite = st.button("✨ Re-write this digest with AI")
+        rewrite = st.button("✨ Re-write this digest with AI", disabled=not budget_ok(),
+                            help="Uses AI to write the summary. Cached afterwards — "
+                                 "re-opening this project won't re-charge.")
     with st.spinner("Writing digest…"):
-        client = None
-        if digest_engine == "claude" and (rewrite or st.session_state.get(f"dg_{project}")):
+        if rewrite and budget_ok():
             client, _ = get_client(api_key)
-            st.session_state[f"dg_{project}"] = True
-        digest = radar.build_digest(clf, project, "claude" if client else "rule",
-                                    client=client, model=model_id, recent_weeks=recent_weeks)
+            digest = radar.build_digest(clf, project, "claude", client=client,
+                                        model=MODEL_ID, recent_weeks=recent_weeks,
+                                        on_usage=lambda u: add_usage(u, MODEL_ID))
+            st.session_state[dg_key] = digest
+        elif st.session_state.get(dg_key) is not None:
+            digest = st.session_state[dg_key]  # cached AI digest — no new spend
+        else:
+            digest = radar.build_digest(clf, project, "rule", recent_weeks=recent_weeks)
 
     emoji, color, _ = HEALTH_STYLE[digest.health]
     st.markdown(
