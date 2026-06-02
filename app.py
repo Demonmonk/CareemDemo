@@ -25,24 +25,102 @@ import streamlit as st
 
 import radar
 
-st.set_page_config(page_title="Risk Radar", page_icon="📡", layout="wide")
+st.set_page_config(page_title="Risk Radar", page_icon="◆", layout="wide")
+
+
+def inject_css():
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root{
+  --bg:#0B0C0E; --panel:#15171B; --panel2:#1B1E24; --border:#262A31;
+  --text:#ECEDEF; --muted:#8A919C; --accent:#2DE1C2;
+}
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"]{
+  font-family:'Manrope',system-ui,-apple-system,sans-serif; color:var(--text);
+}
+.stApp{
+  background:
+    radial-gradient(900px 520px at 88% -8%, rgba(45,225,194,.06), transparent 60%),
+    radial-gradient(720px 520px at -5% -5%, rgba(91,156,255,.05), transparent 55%),
+    #0B0C0E;
+}
+#MainMenu, footer{visibility:hidden;}
+[data-testid="stHeader"]{background:transparent; height:0;}
+[data-testid="stToolbar"]{display:none;}
+.block-container{padding-top:2.4rem; max-width:1180px;}
+
+h1,h2,h3,h4,h5{font-family:'Space Grotesk','Manrope',sans-serif !important; letter-spacing:-.02em;}
+
+.rr-hero{padding:4px 0 2px 0;}
+.rr-kicker{font-family:'Space Grotesk';font-size:.72rem;letter-spacing:.34em;color:var(--accent);
+  font-weight:600;text-transform:uppercase;}
+.rr-title{font-size:2.9rem;font-weight:700;margin:.12em 0 .18em 0;line-height:1.02;}
+.rr-sub{color:var(--muted);font-size:1.05rem;max-width:62ch;margin:0;line-height:1.5;}
+.rr-statusline{color:var(--muted);font-size:.85rem;margin:16px 0 2px 0;display:flex;align-items:center;gap:9px;}
+.rr-statusline:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 10px var(--accent);display:inline-block;}
+
+.stTabs [data-baseweb="tab-list"]{gap:28px;border-bottom:1px solid var(--border);}
+.stTabs [data-baseweb="tab"]{padding:10px 0;color:var(--muted);font-weight:600;font-size:.95rem;}
+.stTabs [aria-selected="true"]{color:var(--text);}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--accent);height:2px;}
+
+[data-testid="stMetric"]{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px 18px;}
+[data-testid="stMetricValue"]{font-family:'Space Grotesk';font-weight:700;}
+[data-testid="stMetricLabel"]{color:var(--muted);font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;font-size:.7rem;}
+
+[data-testid="stExpander"]{border:1px solid var(--border);border-radius:14px;background:var(--panel);
+  margin-bottom:10px;overflow:hidden;}
+[data-testid="stExpander"] summary{font-family:'Space Grotesk';font-weight:600;font-size:1rem;padding:6px 2px;}
+[data-testid="stExpander"] summary:hover{color:var(--accent);}
+
+.stButton>button, .stDownloadButton>button{border-radius:10px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--text);font-weight:600;transition:.15s;}
+.stButton>button:hover, .stDownloadButton>button:hover{border-color:var(--accent);color:var(--accent);}
+.stButton>button:disabled{opacity:.4;}
+
+.stTextInput input, [data-baseweb="select"]>div, [data-baseweb="input"]{
+  background:var(--panel)!important;border-color:var(--border)!important;border-radius:10px!important;}
+
+[data-testid="stSidebar"]{background:#0E1013;border-right:1px solid var(--border);}
+[data-testid="stSidebar"] .stButton>button{width:100%;}
+[data-testid="stSidebar"] h1{font-size:1.25rem;}
+
+[data-testid="stDataFrame"]{border:1px solid var(--border);border-radius:12px;}
+a, a:visited{color:var(--accent);}
+[data-testid="stProgress"] div div div div{background:var(--accent);}
+hr{border-color:var(--border);}
+code, pre{background:var(--panel)!important;border:1px solid var(--border);border-radius:8px;}
+[data-testid="stCaptionContainer"]{color:var(--muted);}
+</style>
+""", unsafe_allow_html=True)
+
+
+inject_css()
 
 # --------------------------------------------------------------------------- #
 # Look-up tables
 # --------------------------------------------------------------------------- #
 
 CAT_BADGE = {
-    "blocker":    ("⛔ Blocker",    "#b3261e"),
-    "risk":       ("⚠️ Risk",       "#e08600"),
-    "dependency": ("🔗 Dependency", "#3b6fb3"),
-    "on_track":   ("✅ On track",   "#1e7d32"),
+    "blocker":    ("Blocker",    "#F4564E"),
+    "risk":       ("Risk",       "#F2B33D"),
+    "dependency": ("Dependency", "#5B9CFF"),
+    "on_track":   ("On track",   "#39D98A"),
 }
 HEALTH_STYLE = {
-    "RED":   ("🔴", "#b3261e", "At risk"),
-    "AMBER": ("🟠", "#e08600", "Needs attention"),
-    "GREEN": ("🟢", "#1e7d32", "Healthy"),
+    "RED":   ("🔴", "#F4564E", "At risk"),
+    "AMBER": ("🟠", "#F2B33D", "Needs attention"),
+    "GREEN": ("🟢", "#39D98A", "Healthy"),
 }
 SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+MUTED = "#8A919C"
+SUBTLE = "#B5BBC4"
+BORDER = "#262A31"
+SEV_CHIP = "#363B43"
 
 # Plain-language descriptions so a viewer knows what each project actually is.
 PROJECT_INFO = {
@@ -172,16 +250,19 @@ def badge(text: str, color: str) -> str:
 
 
 def health_pill(health: str) -> str:
-    emoji, color, label = HEALTH_STYLE[health]
-    return (f"<span style='background:{color}22;color:{color};padding:3px 12px;"
-            f"border-radius:999px;font-weight:700'>{emoji} {health} · {label}</span>")
+    _, color, label = HEALTH_STYLE[health]
+    return (f"<span style='display:inline-flex;align-items:center;gap:8px;"
+            f"background:{color}1f;color:{color};padding:4px 13px;border-radius:999px;"
+            f"font-weight:600;font-size:.85em;letter-spacing:.02em'>"
+            f"<span style='width:7px;height:7px;border-radius:50%;background:{color};"
+            f"display:inline-block'></span>{health} · {label}</span>")
 
 
 # --------------------------------------------------------------------------- #
 # Sidebar — controls
 # --------------------------------------------------------------------------- #
 
-st.sidebar.title("📡 Risk Radar")
+st.sidebar.markdown("### ◆ Risk Radar")
 st.sidebar.caption("Turns messy project updates into a clear status.")
 
 st.sidebar.subheader("1 · Data")
@@ -229,7 +310,7 @@ if have_key:
     runs = st.session_state.get("ai_runs", 0)
     session_capped = runs >= PER_SESSION_RUNS
     run_ai = st.sidebar.button(
-        "⚡ Run AI analysis",
+        "Run AI analysis",
         disabled=exhausted or session_capped,
         help="Reads every update with AI. Free engine shows until you click; "
              "results are cached so it won't re-run or re-charge.")
@@ -329,21 +410,29 @@ def project_trend(project: str) -> pd.DataFrame:
 # Header
 # --------------------------------------------------------------------------- #
 
-st.title("📡 Risk Radar")
-st.markdown("#### Every team writes messy status updates. Risk Radar reads them all "
-            "and tells you — in plain English — which projects are in trouble and why.")
+st.markdown("""
+<div class="rr-hero">
+  <div class="rr-kicker">AI Early-Warning System</div>
+  <div class="rr-title">Risk Radar</div>
+  <p class="rr-sub">Reads every project update and surfaces the risks, blockers and
+  dependencies that threaten delivery — in plain English, with the reasoning shown.</p>
+</div>
+""", unsafe_allow_html=True)
 
 if active_engine == "claude":
-    eng = "🤖 AI analysis active"
+    eng = "AI analysis active"
 elif active_engine == "rule-pending":
-    eng = "⚙️ Free built-in engine — click **⚡ Run AI analysis** in the sidebar for sharper reading"
+    eng = "Built-in engine · enable AI analysis in the sidebar for sharper reading"
 else:
-    eng = "⚙️ Free built-in engine (no setup needed)"
-st.caption(f"{eng}  ·  {len(raw)} updates  ·  {raw['project'].nunique()} projects  ·  "
-           f"health based on the last {recent_weeks} weeks")
+    eng = "Built-in engine"
+st.markdown(
+    f"<div class='rr-statusline'>{eng} &nbsp;·&nbsp; {len(raw)} updates &nbsp;·&nbsp; "
+    f"{raw['project'].nunique()} projects &nbsp;·&nbsp; window: last {recent_weeks} weeks</div>",
+    unsafe_allow_html=True)
+st.write("")
 
 tab_overview, tab_project, tab_data, tab_about = st.tabs(
-    ["📊 Overview", "🔍 Project view", "📥 The data", "ℹ️ How it works"])
+    ["Overview", "Project view", "The data", "How it works"])
 
 
 # --------------------------------------------------------------------------- #
@@ -353,48 +442,53 @@ tab_overview, tab_project, tab_data, tab_about = st.tabs(
 with tab_overview:
     counts = roll["health"].value_counts().to_dict()
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🔴 At risk", counts.get("RED", 0))
-    c2.metric("🟠 Needs attention", counts.get("AMBER", 0))
-    c3.metric("🟢 Healthy", counts.get("GREEN", 0))
-    c4.metric("⛔ Open blockers", int((clf[window_mask]["category"] == "blocker").sum()))
+    c1.metric("At risk", counts.get("RED", 0))
+    c2.metric("Needs attention", counts.get("AMBER", 0))
+    c3.metric("Healthy", counts.get("GREEN", 0))
+    c4.metric("Open blockers", int((clf[window_mask]["category"] == "blocker").sum()))
 
-    st.markdown("**Bird's-eye view — sorted worst-first.** "
-                "Click any project to drill in and see *why* the AI flagged what it did.")
+    st.write("")
+    st.markdown("**Portfolio — sorted worst-first.** "
+                "Open any project to see *why* the AI flagged what it did.")
 
     for _, r in roll.iterrows():
         emoji, _, label = HEALTH_STYLE[r["health"]]
-        title = (f"{emoji}  {r['project']}  ·  {label}"
-                 f"      ⛔ {r['blockers']}   ⚠️ {r['risks']}   🔗 {r['dependencies']}")
+        title = (f"{emoji}   {r['project']}   ·   {label}"
+                 f"        {r['blockers']} blockers   {r['risks']} risks   {r['dependencies']} deps")
         with st.expander(title):
             st.markdown(
                 f"{health_pill(r['health'])} &nbsp;"
-                f"<span style='color:#888'>{r['program']} · Milestone: {r['milestone']}</span>",
+                f"<span style='color:{MUTED}'>{r['program']} · Milestone: {r['milestone']}</span>",
                 unsafe_allow_html=True)
             st.caption(project_desc(r["project"]) or "—")
 
             reason, rcolor = project_reason(r["project"])
-            st.markdown(f"**Bottom line:** <span style='color:{rcolor}'>{reason}</span>",
+            st.markdown(f"<span style='color:{MUTED}'>Bottom line —</span> "
+                        f"<span style='color:{rcolor}'>{reason}</span>",
                         unsafe_allow_html=True)
 
             sub = clf[(clf["project"] == r["project"]) & window_mask]
             flagged = sub[sub["category"] != "on_track"].sort_values("sev_rank")
             if len(flagged):
-                st.markdown("**What the AI flagged, and why** (most urgent first):")
+                st.markdown(f"<div style='color:{MUTED};font-size:.85rem;margin-top:8px'>"
+                            f"WHAT THE AI FLAGGED, AND WHY</div>", unsafe_allow_html=True)
                 for _, u in flagged.iterrows():
                     lab, col = CAT_BADGE[u["category"]]
                     st.markdown(
-                        f"<div style='border-left:3px solid {col};background:{col}10;"
-                        f"padding:8px 11px;border-radius:5px;margin-bottom:8px'>"
-                        f"{badge(lab, col)} &nbsp;{badge(u['severity'].upper(), '#555')}"
-                        f"<div style='margin:5px 0;font-size:0.92em'>“{u['update_text']}”</div>"
-                        f"<div style='font-size:0.83em;color:#555'>"
-                        f"<b>🤖 Why flagged:</b> {u['rationale']}</div>"
-                        f"<div style='font-size:0.83em;color:#555'>"
-                        f"<b>✅ Suggested action:</b> {u['recommended_action']}</div></div>",
+                        f"<div style='border-left:2px solid {col};background:{col}1a;"
+                        f"padding:9px 12px;border-radius:8px;margin:8px 0'>"
+                        f"{badge(lab, col)} &nbsp;{badge(u['severity'].upper(), SEV_CHIP)}"
+                        f"<div style='margin:6px 0;font-size:0.93em'>“{u['update_text']}”</div>"
+                        f"<div style='font-size:0.82em;color:{SUBTLE}'>"
+                        f"<b style='color:{MUTED}'>Why flagged · </b>{u['rationale']}</div>"
+                        f"<div style='font-size:0.82em;color:{SUBTLE}'>"
+                        f"<b style='color:{MUTED}'>Suggested action · </b>{u['recommended_action']}</div></div>",
                         unsafe_allow_html=True)
             else:
-                st.success("No open blockers, risks or dependencies in this window — healthy.")
-            st.caption("→ Open the **Project view** tab for the full timeline, trend chart and digest.")
+                st.markdown(f"<span style='color:{CAT_BADGE['on_track'][1]}'>● </span>"
+                            "No open blockers, risks or dependencies in this window — healthy.",
+                            unsafe_allow_html=True)
+            st.caption("Open the Project view tab for the full timeline, trend and digest.")
 
 
 # --------------------------------------------------------------------------- #
@@ -409,63 +503,68 @@ with tab_project:
     prow = roll[roll["project"] == project].iloc[0]
     st.markdown(f"## {project}")
     st.markdown(health_pill(prow["health"]) +
-                f" &nbsp;<span style='color:#888'>{prow['program']} · Milestone: {prow['milestone']}</span>",
+                f" &nbsp;<span style='color:{MUTED}'>{prow['program']} · Milestone: {prow['milestone']}</span>",
                 unsafe_allow_html=True)
-    st.write(project_desc(project) or "")
+    st.markdown(f"<span style='color:{SUBTLE}'>{project_desc(project) or ''}</span>",
+                unsafe_allow_html=True)
+    st.write("")
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("⛔ Blockers", int(prow["blockers"]))
-    m2.metric("⚠️ Risks", int(prow["risks"]))
-    m3.metric("🔗 Dependencies", int(prow["dependencies"]))
-    m4.metric("✅ On track", int(prow["on_track"]))
+    m1.metric("Blockers", int(prow["blockers"]))
+    m2.metric("Risks", int(prow["risks"]))
+    m3.metric("Dependencies", int(prow["dependencies"]))
+    m4.metric("On track", int(prow["on_track"]))
 
-    st.markdown("##### 📈 How it's trending")
-    st.caption("Weekly count of problems the radar flagged — watch them build (or clear).")
-    st.line_chart(project_trend(project), color=["#b3261e", "#e08600", "#3b6fb3"])
+    st.write("")
+    st.markdown("##### Trend — problems flagged per week")
+    st.caption("Watch the signal load build (or clear) over the weeks.")
+    st.line_chart(project_trend(project), color=["#F4564E", "#F2B33D", "#5B9CFF"])
 
     st.divider()
-    st.markdown("### What Risk Radar makes of each update")
+    st.markdown("### From raw update to signal")
     st.markdown(
-        "**“Risk Radar” is the AI.** It reads every update this team wrote and, for "
-        "each one, decides what it really is and how urgent — so you don't have to. "
-        "Each card below shows the **raw update** with the radar's **read** stapled "
-        "underneath it. Newest first.")
-    st.markdown(
-        badge("⛔ Blocker", CAT_BADGE["blocker"][1]) + " work is stopped &nbsp; " +
-        badge("⚠️ Risk", CAT_BADGE["risk"][1]) + " threatens the deadline &nbsp; " +
-        badge("🔗 Dependency", CAT_BADGE["dependency"][1]) + " waiting on someone &nbsp; " +
-        badge("✅ On track", CAT_BADGE["on_track"][1]) + " all good",
+        f"<span style='color:{SUBTLE}'><b>Risk Radar is the AI.</b> It reads every update "
+        "this team wrote and decides what it really is and how urgent. Each card pairs the "
+        "<b>raw update</b> with the radar's <b>read</b> of it. Newest first.</span>",
         unsafe_allow_html=True)
+    st.markdown(
+        badge("Blocker", CAT_BADGE["blocker"][1]) + f"<span style='color:{MUTED};font-size:.82em'> work stopped</span> &nbsp;&nbsp; " +
+        badge("Risk", CAT_BADGE["risk"][1]) + f"<span style='color:{MUTED};font-size:.82em'> threatens the deadline</span> &nbsp;&nbsp; " +
+        badge("Dependency", CAT_BADGE["dependency"][1]) + f"<span style='color:{MUTED};font-size:.82em'> waiting on someone</span> &nbsp;&nbsp; " +
+        badge("On track", CAT_BADGE["on_track"][1]) + f"<span style='color:{MUTED};font-size:.82em'> all good</span>",
+        unsafe_allow_html=True)
+    st.write("")
 
     pdata = clf[clf["project"] == project].sort_values("date", ascending=False)
     with st.container(height=460):
         for _, u in pdata.iterrows():
             label, color = CAT_BADGE[u["category"]]
             if u["category"] == "on_track":
-                read = f"{badge(label, color)} &nbsp;<span style='color:#666'>no action needed</span>"
+                read = f"{badge(label, color)} &nbsp;<span style='color:{MUTED}'>no action needed</span>"
             else:
-                read = (f"{badge(label, color)} &nbsp;{badge(u['severity'].upper(), '#555')} "
-                        f"&nbsp;<span style='color:#444'>→ {u['recommended_action']}</span>")
-            why = (f"<div style='font-size:0.8em;color:#777;margin-top:5px'>"
-                   f"<b>Why:</b> {u['rationale']}</div>")
+                read = (f"{badge(label, color)} &nbsp;{badge(u['severity'].upper(), SEV_CHIP)} "
+                        f"&nbsp;<span style='color:{SUBTLE}'>→ {u['recommended_action']}</span>")
+            why = (f"<div style='font-size:0.8em;color:{MUTED};margin-top:6px'>"
+                   f"Why · {u['rationale']}</div>")
             st.markdown(
-                f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
-                f"padding:10px 12px;margin-bottom:10px'>"
-                f"<div style='color:#888;font-size:0.8em'>🗒️ {u['date']} · {u['author']}</div>"
-                f"<div style='margin:3px 0 7px 0'>“{u['update_text']}”</div>"
-                f"<div style='background:{color}14;border-left:3px solid {color};"
-                f"padding:7px 10px;border-radius:5px'>"
-                f"<span style='font-size:0.82em;color:#888'>🤖 RADAR READ</span><br>{read}{why}</div>"
+                f"<div style='border:1px solid {BORDER};border-radius:12px;"
+                f"padding:12px 14px;margin-bottom:11px;background:#121317'>"
+                f"<div style='color:{MUTED};font-size:0.78em;letter-spacing:.02em'>{u['date']} · {u['author']}</div>"
+                f"<div style='margin:5px 0 9px 0'>“{u['update_text']}”</div>"
+                f"<div style='background:{color}1a;border-left:2px solid {color};"
+                f"padding:9px 12px;border-radius:8px'>"
+                f"<span style='font-size:0.72em;color:{MUTED};letter-spacing:.14em'>RADAR READ</span>"
+                f"<br>{read}{why}</div>"
                 f"</div>", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("### 📝 Status digest")
+    st.markdown("### Status digest")
     st.caption("The one-paragraph brief a director could read in 20 seconds.")
 
     dg_key = f"dg|{project}|{df_fingerprint(raw)}|{recent_weeks}"
     rewrite = False
     if active_engine == "claude":
-        rewrite = st.button("✨ Re-write this digest with AI", disabled=not budget_ok(),
+        rewrite = st.button("Re-write this digest with AI", disabled=not budget_ok(),
                             help="Uses AI to write the summary. Cached afterwards — "
                                  "re-opening this project won't re-charge.")
     with st.spinner("Writing digest…"):
@@ -480,22 +579,27 @@ with tab_project:
         else:
             digest = radar.build_digest(clf, project, "rule", recent_weeks=recent_weeks)
 
-    emoji, color, _ = HEALTH_STYLE[digest.health]
+    _, color, _ = HEALTH_STYLE[digest.health]
     st.markdown(
-        f"<div style='padding:14px 18px;border-radius:10px;background:{color}1a;"
-        f"border-left:6px solid {color}'><h4 style='margin:0'>{emoji} {digest.health}</h4>"
-        f"<p style='margin:6px 0 0 0;font-size:1.05em'>{digest.headline}</p></div>",
+        f"<div style='padding:16px 20px;border-radius:14px;background:{color}1a;"
+        f"border:1px solid {color}40;border-left:4px solid {color}'>"
+        f"<div style='font-family:Space Grotesk;font-weight:600;color:{color};"
+        f"display:flex;align-items:center;gap:9px'>"
+        f"<span style='width:8px;height:8px;border-radius:50%;background:{color};"
+        f"display:inline-block'></span>{digest.health}</div>"
+        f"<p style='margin:8px 0 0 0;font-size:1.05em'>{digest.headline}</p></div>",
         unsafe_allow_html=True)
+    st.write("")
     da, db = st.columns(2)
     with da:
-        st.markdown("**⛔ Blockers**")
+        st.markdown("**Blockers**")
         st.markdown("\n".join(f"- {b}" for b in digest.blockers) or "_None_")
-        st.markdown("**⚠️ Top risks**")
+        st.markdown("**Top risks**")
         st.markdown("\n".join(f"- {r}" for r in digest.top_risks) or "_None_")
     with db:
-        st.markdown("**🔗 Dependencies**")
+        st.markdown("**Dependencies**")
         st.markdown("\n".join(f"- {d}" for d in digest.dependencies) or "_None_")
-        st.markdown("**✅ Recommended next steps**")
+        st.markdown("**Recommended next steps**")
         st.markdown("\n".join(f"{i}. {s}" for i, s in enumerate(digest.next_steps, 1)) or "_None_")
 
 
@@ -510,10 +614,10 @@ with tab_data:
         "Careem-style lines of business — Careem Pay, Rides, Careem Food, Quik, platform and "
         "compliance — over ~10 weeks. It's deliberately messy, seeded with risks, blockers and "
         "cross-team dependencies so you can watch the radar catch them.")
-    st.caption("⚠️ Illustrative mock data — hand-generated for this demo. It is **not** real "
+    st.caption("Illustrative mock data — hand-generated for this demo. It is **not** real "
                "Careem data and is not affiliated with, endorsed by, or sourced from Careem.")
 
-    q = st.text_input("🔎 Search the updates", placeholder="e.g. KYC, blocked, payments…")
+    q = st.text_input("Search the updates", placeholder="e.g. KYC, blocked, payments…")
     view = clf.copy()
     proj_filter = st.multiselect("Filter by project", sorted(view["project"].unique()))
     if proj_filter:
@@ -527,12 +631,11 @@ with tab_data:
     st.caption(f"Showing {len(view)} of {len(clf)} updates.")
     st.dataframe(view[cols], width='stretch', hide_index=True)
 
-    st.download_button("⬇️ Download the full dataset (CSV)",
+    st.download_button("Download the full dataset (CSV)",
                        raw.to_csv(index=False).encode("utf-8"),
                        file_name="project_updates.csv", mime="text/csv")
-    st.info("📎 **Sharing it publicly:** this same file lives in the repo at "
-            "`data/project_updates.csv`. Make the GitHub repo public and link directly "
-            "to that file for your submission's 'public dataset link'.")
+    st.caption("Sharing it publicly: this same file lives in the repo at "
+               "`data/project_updates.csv` — link directly to it for the public dataset link.")
 
     with st.expander("What each column means"):
         st.markdown("""
@@ -560,14 +663,14 @@ one, classifies it, and surfaces the trouble **before** it hits the deadline.
 ### The workflow
 ```
 Raw updates  →  AI reads each one  →  Structured signal  →  Health rollup  →  Status digest
- (messy text)   risk / blocker /      + severity +          🔴🟠🟢 per        plain-English
+ (messy text)   risk / blocker /      + severity +          RAG status per   plain-English
                 dependency / ok       next action           project          brief
 ```
 
 1. **Ingest** free-text updates (standups, status emails, ticket comments).
 2. **Classify** each into one signal — blocker / risk / dependency / on-track —
    with a severity and a recommended next step.
-3. **Roll up** recent signals into a 🔴🟠🟢 health per project.
+3. **Roll up** recent signals into a red / amber / green health per project.
 4. **Summarize** any project into a director-ready digest.
 
 ### Why AI *and* a free fallback
