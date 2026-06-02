@@ -1,11 +1,10 @@
 # 100-word summary
 
-**Risk Radar** is an AI workflow that turns the daily noise of project updates —
-standups, status emails, ticket comments — into early warnings. Each messy
-update is classified into one structured signal — blocker, risk, dependency, or
-on-track — with a severity, the reason it was flagged, and a recommended next
-step. Signals roll up into a 🔴🟠🟢 health per project and a one-glance status
-digest (covering the Status-Summarizer challenge too). It's built on Claude with
-structured outputs and prompt caching, and ships with a free rule-based fallback
-so the live demo runs with no API key. The dataset is synthetic, Careem-themed
-mock data with hidden ground-truth labels to measure accuracy.
+**Risk Radar** is an AI early-warning system for delivery. It ingests the messy
+status updates a program manager drowns in — standups, emails, Jira comments —
+and uses the **Claude API** to classify each into a structured signal: blocker,
+risk, dependency or on-track, with a severity, the reason it was flagged, and a
+recommended next step. Signals roll up into a RAG health per project and a
+director-ready status digest. Built with structured outputs, prompt caching and
+a rule-based fallback (so it runs with no key), plus a hard spend cap for safe
+public use. Accuracy is measured against planted ground-truth labels.
