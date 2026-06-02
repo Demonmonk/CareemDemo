@@ -108,12 +108,24 @@ def rule_classify_one(text: str) -> dict:
     else:
         severity = "medium"
 
-    rationale = {
-        "blocker": "Work appears stopped pending external action.",
-        "risk": "Progress continues but a threat to timeline/quality is noted.",
-        "dependency": "Progress hinges on another team or vendor deliverable.",
-        "on_track": "Healthy progress with no concern raised.",
-    }[category]
+    # Rationale that cites the actual trigger words, so "why" is concrete.
+    pat = {"blocker": _BLOCKER_PAT, "risk": _RISK_PAT, "dependency": _DEP_PAT}.get(category)
+    trigger = ""
+    if pat is not None:
+        m = pat.search(text)
+        if m:
+            trigger = m.group(0)
+    if category == "on_track":
+        rationale = "No blocker/risk/dependency language — reads as healthy progress."
+    elif category == "blocker":
+        rationale = (f"The wording “{trigger}” means work is stopped until someone acts."
+                     if trigger else "Work appears stopped pending external action.")
+    elif category == "risk":
+        rationale = (f"“{trigger}” signals a threat to the timeline or quality, though work continues."
+                     if trigger else "A threat to the timeline or quality is noted.")
+    else:
+        rationale = (f"“{trigger}” shows progress hinges on another team or vendor."
+                     if trigger else "Progress hinges on another team or vendor deliverable.")
     action = {
         "blocker": "Escalate to the PMO and identify the owner to unblock.",
         "risk": "Add to the risk log and agree a mitigation this week.",

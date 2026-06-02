@@ -273,31 +273,43 @@ with tab_overview:
     c3.metric("🟢 Healthy", counts.get("GREEN", 0))
     c4.metric("⛔ Open blockers", int((clf[window_mask]["category"] == "blocker").sum()))
 
-    st.markdown("Projects sorted **worst-first**. Each line is the AI's read of the "
-                "latest updates — no spreadsheet-reading required.")
+    st.markdown("**Bird's-eye view — sorted worst-first.** "
+                "Click any project to drill in and see *why* the AI flagged what it did.")
 
     for _, r in roll.iterrows():
-        emoji, color, label = HEALTH_STYLE[r["health"]]
-        reason, rcolor = project_reason(r["project"])
-        with st.container(border=True):
-            left, right = st.columns([3, 1])
-            with left:
-                st.markdown(
-                    f"{health_pill(r['health'])}  &nbsp; **{r['project']}** "
-                    f"<span style='color:#888'>· {r['program']}</span>",
-                    unsafe_allow_html=True)
-                st.caption(project_desc(r["project"]) or "—")
-                st.markdown(
-                    f"<span style='color:{rcolor}'>▸ {reason}</span>",
-                    unsafe_allow_html=True)
-            with right:
-                st.markdown(
-                    f"<div style='text-align:right;line-height:1.6'>"
-                    f"⛔ <b>{r['blockers']}</b> blockers<br>"
-                    f"⚠️ <b>{r['risks']}</b> risks<br>"
-                    f"🔗 <b>{r['dependencies']}</b> dependencies<br>"
-                    f"<span style='color:#888'>Milestone: {r['milestone']}</span></div>",
-                    unsafe_allow_html=True)
+        emoji, _, label = HEALTH_STYLE[r["health"]]
+        title = (f"{emoji}  {r['project']}  ·  {label}"
+                 f"      ⛔ {r['blockers']}   ⚠️ {r['risks']}   🔗 {r['dependencies']}")
+        with st.expander(title):
+            st.markdown(
+                f"{health_pill(r['health'])} &nbsp;"
+                f"<span style='color:#888'>{r['program']} · Milestone: {r['milestone']}</span>",
+                unsafe_allow_html=True)
+            st.caption(project_desc(r["project"]) or "—")
+
+            reason, rcolor = project_reason(r["project"])
+            st.markdown(f"**Bottom line:** <span style='color:{rcolor}'>{reason}</span>",
+                        unsafe_allow_html=True)
+
+            sub = clf[(clf["project"] == r["project"]) & window_mask]
+            flagged = sub[sub["category"] != "on_track"].sort_values("sev_rank")
+            if len(flagged):
+                st.markdown("**What the AI flagged, and why** (most urgent first):")
+                for _, u in flagged.iterrows():
+                    lab, col = CAT_BADGE[u["category"]]
+                    st.markdown(
+                        f"<div style='border-left:3px solid {col};background:{col}10;"
+                        f"padding:8px 11px;border-radius:5px;margin-bottom:8px'>"
+                        f"{badge(lab, col)} &nbsp;{badge(u['severity'].upper(), '#555')}"
+                        f"<div style='margin:5px 0;font-size:0.92em'>“{u['update_text']}”</div>"
+                        f"<div style='font-size:0.83em;color:#555'>"
+                        f"<b>🤖 Why flagged:</b> {u['rationale']}</div>"
+                        f"<div style='font-size:0.83em;color:#555'>"
+                        f"<b>✅ Suggested action:</b> {u['recommended_action']}</div></div>",
+                        unsafe_allow_html=True)
+            else:
+                st.success("No open blockers, risks or dependencies in this window — healthy.")
+            st.caption("→ Open the **Project view** tab for the full timeline, trend chart and digest.")
 
 
 # --------------------------------------------------------------------------- #
@@ -349,6 +361,8 @@ with tab_project:
             else:
                 read = (f"{badge(label, color)} &nbsp;{badge(u['severity'].upper(), '#555')} "
                         f"&nbsp;<span style='color:#444'>→ {u['recommended_action']}</span>")
+            why = (f"<div style='font-size:0.8em;color:#777;margin-top:5px'>"
+                   f"<b>Why:</b> {u['rationale']}</div>")
             st.markdown(
                 f"<div style='border:1px solid #e6e6e6;border-radius:8px;"
                 f"padding:10px 12px;margin-bottom:10px'>"
@@ -356,7 +370,7 @@ with tab_project:
                 f"<div style='margin:3px 0 7px 0'>“{u['update_text']}”</div>"
                 f"<div style='background:{color}14;border-left:3px solid {color};"
                 f"padding:7px 10px;border-radius:5px'>"
-                f"<span style='font-size:0.82em;color:#888'>🤖 RADAR READ</span><br>{read}</div>"
+                f"<span style='font-size:0.82em;color:#888'>🤖 RADAR READ</span><br>{read}{why}</div>"
                 f"</div>", unsafe_allow_html=True)
 
     st.divider()
@@ -415,7 +429,8 @@ with tab_data:
         view = view[view["update_text"].str.contains(q, case=False, na=False)]
 
     cols = [c for c in ["date", "project", "author", "update_text",
-                        "category", "severity", "recommended_action"] if c in view.columns]
+                        "category", "severity", "rationale", "recommended_action"]
+            if c in view.columns]
     st.caption(f"Showing {len(view)} of {len(clf)} updates.")
     st.dataframe(view[cols], width='stretch', hide_index=True)
 
