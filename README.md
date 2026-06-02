@@ -37,14 +37,17 @@ Raw updates  →  AI classifier  →  Signal store  →  Health rollup  →  Sta
 
 | Engine | When | How |
 |---|---|---|
-| **Claude** (`claude-haiku-4-5` by default; Sonnet/Opus selectable) | A key is present **and** you click ⚡ Run Claude | Structured outputs (`messages.parse`) + prompt caching on the static instructions. Reads for *intent*. |
-| **Rule-based** | No key, or before you run Claude | Transparent keyword/heuristic classifier. Always available, zero cost — so graders can run it instantly. |
+| **Claude** (`claude-haiku-4-5`, fixed) | A key is configured **and** you click ⚡ Run AI analysis | Structured outputs (`messages.parse`) + prompt caching on the static instructions. Reads for *intent*. |
+| **Rule-based** | No key, or before you run AI | Transparent keyword/heuristic classifier. Always available, zero cost — so graders can run it instantly. |
 
 The app shows free rule-based results by default and only spends API credit when
-you explicitly click **⚡ Run Claude** (≈5–10¢ on Haiku for the whole dataset).
-Results are cached per session, so it never re-bills for the same data. Haiku is
-the default because classification is a simple task — the right model for the
-job, not the most expensive one.
+you explicitly click **⚡ Run AI analysis** (≈5–10¢ for the whole dataset).
+Results are cached per session, so it never re-bills for the same data.
+
+The model is **fixed to a fast, low-cost model under the hood** — there is no
+model picker in the UI, so a visitor can't accidentally run an expensive model.
+The API key is read only from server-side secrets and is **never shown or
+entered in the UI**.
 
 ## Run it locally
 
@@ -61,8 +64,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 streamlit run app.py
 ```
 
-…or paste the key into the sidebar. You can also drop it in
-`.streamlit/secrets.toml` (git-ignored).
+The key is read only from the environment or `.streamlit/secrets.toml`
+(git-ignored) — it is never entered or shown in the UI.
 
 ## Deploy (Streamlit Community Cloud)
 
@@ -105,9 +108,9 @@ Upload any CSV with at least `project` and `update_text` columns. `date`,
 
 - **Claude usage** follows current best practice: structured outputs via
   `messages.parse`, `cache_control` on the static system prompt so the
-  instruction prefix is prompt-cached across batched calls, and **cost-aware
-  model selection** — Haiku 4.5 by default for a cheap classification task, with
-  Sonnet/Opus one click away.
+  instruction prefix is prompt-cached across batched calls, and a **cost-aware,
+  fixed low-cost model** (`claude-haiku-4-5`) — the right-sized tool for a simple
+  classification task. No model picker, so cost can't run away.
 - **Graceful degradation** is a feature, not a hack — the rule engine keeps the
   demo honest and runnable, and the side-by-side accuracy view makes the value
   of the LLM explicit.

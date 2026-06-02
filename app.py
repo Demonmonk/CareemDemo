@@ -143,38 +143,35 @@ if "week" not in raw.columns:
         raw["week"] = 1
 has_truth = "signal_truth" in raw.columns
 
-st.sidebar.subheader("2 · AI engine")
+st.sidebar.subheader("2 · AI analysis")
+# The API key is read ONLY from the server-side environment / Streamlit secrets.
+# It is never shown in the UI and there is no input box — nothing to reveal.
 default_key = os.environ.get("ANTHROPIC_API_KEY", "")
 try:
     default_key = default_key or st.secrets.get("ANTHROPIC_API_KEY", "")
 except Exception:  # noqa: BLE001 — no secrets file is fine
     pass
 
-MODEL_CHOICES = {
-    "Haiku 4.5 — fastest & cheapest (recommended)": "claude-haiku-4-5",
-    "Sonnet 4.6 — balanced": "claude-sonnet-4-6",
-    "Opus 4.8 — most capable": "claude-opus-4-8",
-}
-use_claude = st.sidebar.toggle(
-    "Use Claude", value=bool(default_key),
-    help="On: classify with the Anthropic API. Off: the built-in rule-based engine (free).")
-api_key, model_id, run_claude = "", "claude-haiku-4-5", False
-if use_claude:
-    api_key = st.sidebar.text_input("Anthropic API key", value=default_key, type="password",
-                                    help="Read from ANTHROPIC_API_KEY / secrets if set. Never stored.")
-    model_id = MODEL_CHOICES[st.sidebar.selectbox("Model", list(MODEL_CHOICES), index=0)]
-    run_claude = st.sidebar.button("⚡ Run Claude classification",
-                                   help="Spends ≈5–10¢ on Haiku for the whole dataset. "
-                                        "Free rule-based results show until you click; cached after.")
-    if not api_key:
-        st.sidebar.warning("No key provided — using the free rule-based engine.")
-        use_claude = False
+# Fixed, low-cost model under the hood — not user-selectable.
+MODEL_ID = "claude-haiku-4-5"
+api_key, model_id = default_key, MODEL_ID
+have_key = bool(default_key)
+
+run_ai = False
+if have_key:
+    run_ai = st.sidebar.button(
+        "⚡ Run AI analysis",
+        help="Reads every update with AI for sharper results. The free built-in "
+             "engine shows until you click; results are cached so it won't re-run.")
+else:
+    st.sidebar.caption("Showing the free built-in engine. Deeper AI analysis can be "
+                       "enabled by the app owner via a key in the app's secrets.")
 
 st.sidebar.subheader("3 · Current-state window")
 recent_weeks = st.sidebar.slider("Health uses the last N weeks", 1, 6, 3,
                                  help="Older updates age out so health reflects the present.")
 
-engine = "claude" if use_claude else "rule"
+engine = "claude" if have_key else "rule"
 
 
 # --------------------------------------------------------------------------- #
@@ -208,7 +205,7 @@ def run_classification(df, engine, api_key, model_id, run_claude):
     return out, "claude"
 
 
-clf, active_engine = run_classification(raw, engine, api_key, model_id, run_claude)
+clf, active_engine = run_classification(raw, engine, api_key, model_id, run_ai)
 clf["sev_rank"] = clf["severity"].map(SEV_ORDER)
 roll = radar.portfolio_rollup(clf, recent_weeks=recent_weeks)
 max_week = int(clf["week"].max())
@@ -252,11 +249,11 @@ st.markdown("#### Every team writes messy status updates. Risk Radar reads them 
             "and tells you — in plain English — which projects are in trouble and why.")
 
 if active_engine == "claude":
-    eng = f"🤖 Reading with Claude · {model_id}"
+    eng = "🤖 AI analysis active"
 elif active_engine == "rule-pending":
-    eng = "⚙️ Free rule-based engine — click **⚡ Run Claude** in the sidebar for LLM reasoning"
+    eng = "⚙️ Free built-in engine — click **⚡ Run AI analysis** in the sidebar for sharper reading"
 else:
-    eng = "⚙️ Free rule-based engine (no API key needed)"
+    eng = "⚙️ Free built-in engine (no setup needed)"
 st.caption(f"{eng}  ·  {len(raw)} updates  ·  {raw['project'].nunique()} projects  ·  "
            f"health based on the last {recent_weeks} weeks")
 
@@ -363,7 +360,7 @@ with tab_project:
     digest_engine = "claude" if active_engine == "claude" else "rule"
     rewrite = False
     if active_engine == "claude":
-        rewrite = st.button("✨ Rewrite this digest with Claude")
+        rewrite = st.button("✨ Re-write this digest with AI")
     with st.spinner("Writing digest…"):
         client = None
         if digest_engine == "claude" and (rewrite or st.session_state.get(f"dg_{project}")):
@@ -459,19 +456,19 @@ Raw updates  →  AI reads each one  →  Structured signal  →  Health rollup 
 3. **Roll up** recent signals into a 🔴🟠🟢 health per project.
 4. **Summarize** any project into a director-ready digest.
 
-### Why Claude *and* a free fallback
-The app always runs live so anyone can try it with no key. Add an Anthropic key
-and it flips to real LLM reasoning — Claude reads for *intent*, telling a casual
-"blocked on lunch" from a halted production rollout, which keyword rules can't.
-It defaults to **Haiku 4.5** because classification is a simple task — the
-right-sized model, not the priciest.
+### Why AI *and* a free fallback
+The app always runs live so anyone can try it with no setup. With AI analysis
+enabled it reads for *intent* — telling a casual "blocked on lunch" from a
+halted production rollout, which keyword rules can't. It runs on a fast,
+low-cost model under the hood, because classification is a simple task — the
+right-sized tool, not the priciest.
 """)
     if has_truth:
         st.markdown("### Does it actually work? (accuracy vs. planted answers)")
         st.caption("The synthetic data carries a hidden 'correct' label per update. The radar "
                    "never sees it — it's used only here to measure how often the AI agrees.")
         agree = (clf["category"] == clf["signal_truth"]).mean()
-        eng_name = "Claude" if active_engine == "claude" else "Rule-based engine"
+        eng_name = "AI engine" if active_engine == "claude" else "Rule-based engine"
         st.metric(f"{eng_name} agreement with the planted answer", f"{agree*100:.1f}%")
         cm = (pd.crosstab(clf["signal_truth"], clf["category"])
               .reindex(index=radar.CATEGORIES, columns=radar.CATEGORIES, fill_value=0))
