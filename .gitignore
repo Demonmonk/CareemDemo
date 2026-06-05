@@ -12,3 +12,7 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# password-lab generated artifacts (regenerate via the scripts)
+password-lab/leaked_wp_users.csv
+password-lab/wordlist.txt
